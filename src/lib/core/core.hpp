@@ -45,6 +45,8 @@ struct Core {
 
   static inline Core *s_instance =
       nullptr; // `instance` is taken by the vk::raii::Instance member
+  // Seconds since the previous frame, refreshed at the top of drawFrame.
+  float deltaTime = 0.0f;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
   std::unique_ptr<Sync> sync = nullptr;
 
@@ -55,12 +57,6 @@ struct Core {
   // Plugins must be registered before init(): that is when they build their
   // pipelines, and the device has to exist by then.
   void addPlugin(std::unique_ptr<Plugin> plugin);
-
-  glm::vec3 cameraPos = {2.0f, 2.0f, 2.0f};
-  float cameraYaw = -135.0f;
-  float cameraPitch = -30.0f;
-  [[nodiscard]] glm::vec3 cameraFront() const;
-  void processInput(float deltaTime);
 
   void initVulkan();
   void initECS();

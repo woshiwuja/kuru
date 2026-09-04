@@ -1,3 +1,4 @@
+#include "game/plugins/camera.hpp"
 #include "game/plugins/heightmap.hpp"
 #include "game/plugins/mesh_registry.hpp"
 #include "game/plugins/plugins.hpp"
@@ -12,9 +13,11 @@ int main()
 	try
 	{
 		Core app;
-		// Registration order is init order: the mesh cache and the renderer must
-		// exist before any plugin that builds entities.
+		// Registration order is both init and run order: the mesh cache and the
+		// camera come before the renderer, which reads the view they set up;
+		// HeightmapPlugin needs the renderer to already be in the registry.
 		app.addPlugin(std::make_unique<MeshRegistryPlugin>());
+		app.addPlugin(std::make_unique<CameraPlugin>());
 		app.addPlugin(std::make_unique<RenderPlugin>());
 		app.addPlugin(std::make_unique<HeightmapPlugin>());
 		app.init();

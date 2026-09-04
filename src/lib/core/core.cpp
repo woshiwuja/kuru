@@ -1,6 +1,5 @@
 #include "core.hpp"
 #include "../image/image.hpp"
-#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_vulkan.h>
 #include <cassert>
 #include <chrono>
@@ -62,6 +61,8 @@ void Core::addPlugin(std::unique_ptr<Plugin> plugin) {
 }
 
 void Core::initECS() {
+  // The frame contract is the engine's, not any one plugin's.
+  reg.ctx().emplace<FrameContext>();
   for (auto &plugin : plugins) {
     plugin->init(reg);
   }
@@ -69,11 +70,8 @@ void Core::initECS() {
 
 void Core::mainLoop() {
   while (running) {
-    while (eventManager->poll()) {
-      if (eventManager->e.type == SDL_EVENT_QUIT) {
-        running = false;
-      }
-    }
+    eventManager->pump();
+    running = !eventManager->quit;
     drawFrame();
   }
   device->wait();
@@ -91,33 +89,6 @@ void Core::cleanup() {
   graphics = nullptr;
   device = nullptr;
   instance = nullptr;
-}
-
-glm::vec3 Core::cameraFront() const {
-  const float yaw = glm::radians(cameraYaw);
-  const float pitch = glm::radians(cameraPitch);
-  return glm::normalize(glm::vec3{std::cos(yaw) * std::cos(pitch),
-                                  std::sin(pitch),
-                                  std::sin(yaw) * std::cos(pitch)});
-}
-
-void Core::processInput(float deltaTime) {
-  const bool *keys = SDL_GetKeyboardState(nullptr);
-  const float speed = 3.0f * deltaTime;
-  const float turn = 90.0f * deltaTime;
-  const glm::vec3 front = cameraFront();
-  const glm::vec3 right =
-      glm::normalize(glm::cross(front, glm::vec3(0.0f, 1.0f, 0.0f)));
-
-  if (keys[SDL_SCANCODE_W]) cameraPos += front * speed;
-  if (keys[SDL_SCANCODE_S]) cameraPos -= front * speed;
-  if (keys[SDL_SCANCODE_A]) cameraPos -= right * speed;
-  if (keys[SDL_SCANCODE_D]) cameraPos += right * speed;
-  if (keys[SDL_SCANCODE_LEFT]) cameraYaw -= turn;
-  if (keys[SDL_SCANCODE_RIGHT]) cameraYaw += turn;
-  if (keys[SDL_SCANCODE_UP]) cameraPitch += turn;
-  if (keys[SDL_SCANCODE_DOWN]) cameraPitch -= turn;
-  cameraPitch = std::clamp(cameraPitch, -89.0f, 89.0f);
 }
 
 void Core::createInstance() {
@@ -206,14 +177,9 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
   frame.commandBuffer = &commandBuffer;
   frame.frameIndex = sync->frameIndex;
   frame.extent = graphics->swapChainExtent;
-  frame.view = glm::lookAt(cameraPos, cameraPos + cameraFront(),
-                           glm::vec3(0.0f, 1.0f, 0.0f));
-  frame.proj = glm::perspective(
-      glm::radians(45.0f),
-      static_cast<float>(graphics->swapChainExtent.width) /
-          static_cast<float>(graphics->swapChainExtent.height),
-      0.1f, 40.0f);
-  frame.proj[1][1] *= -1;
+  // view and proj are left to whichever plugin owns the camera.
+  // ponytail: every plugin runs inside the render pass; split into phases when
+  // one that does not draw shows up.
   for (auto &plugin : plugins) {
     plugin->run(reg);
   }
@@ -233,11 +199,9 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
 
 void Core::drawFrame() {
   static auto lastFrameTime = std::chrono::high_resolution_clock::now();
-  auto currentTime = std::chrono::high_resolution_clock::now();
-  float deltaTime =
-      std::chrono::duration<float>(currentTime - lastFrameTime).count();
+  const auto currentTime = std::chrono::high_resolution_clock::now();
+  deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
   lastFrameTime = currentTime;
-  processInput(deltaTime);
 
   auto fenceResult = device->device.waitForFences(
       *sync->inFlightFences[sync->frameIndex], vk::True, UINT64_MAX);

@@ -14,7 +14,6 @@ glm::mat4 Transform::matrix() const {
 }
 
 void RenderPlugin::init(entt::registry &reg) {
-  reg.ctx().emplace<FrameContext>();
   // Other plugins reach the renderer through the registry, not a global.
   reg.ctx().emplace<RenderPlugin *>(this);
   createDescriptorSetLayout();
