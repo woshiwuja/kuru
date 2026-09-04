@@ -90,7 +90,7 @@ void Texture::load(const std::string &path)
 	auto core = Core::get();
 	ktxTexture    *kTexture;
 	KTX_error_code result = ktxTexture_CreateFromNamedFile(
-	    path.c_str(),
+	    assetPath(path).c_str(),
 	    KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
 	    &kTexture);
 

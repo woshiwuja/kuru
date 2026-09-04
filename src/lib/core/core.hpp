@@ -20,9 +20,16 @@ struct AppInfo {
 // with that subsystem: uploads on Device, images in image/, meshes in model/,
 // the pipeline and per-entity state in the render plugin.
 struct Core {
+  // Declaration order IS destruction order, reversed, and it has to match
+  // creation order: the instance must outlive the device, the device must
+  // outlive everything it made. cleanup() does this explicitly on the normal
+  // path, but an exception during init() unwinds straight through here.
   bool running = false;
   std::unique_ptr<Window> window = nullptr;
   std::unique_ptr<EventManager> eventManager = nullptr;
+  AppInfo appInfo = {};
+  vk::raii::Context context;
+  vk::raii::Instance instance = nullptr;
   std::unique_ptr<Device> device = nullptr;
   std::unique_ptr<Graphics> graphics = nullptr;
   Core();
@@ -38,9 +45,6 @@ struct Core {
 
   static inline Core *s_instance =
       nullptr; // `instance` is taken by the vk::raii::Instance member
-  AppInfo appInfo = {};
-  vk::raii::Context context;
-  vk::raii::Instance instance = nullptr;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
   std::unique_ptr<Sync> sync = nullptr;
 

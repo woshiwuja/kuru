@@ -1,5 +1,6 @@
 #pragma once
 #include "vertex.hpp"
+#include <string>
 #include <vulkan/vulkan_raii.hpp>
 
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
@@ -16,5 +17,9 @@ uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties props,
 void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
                   vk::MemoryPropertyFlags memProps, vk::raii::Buffer &buffer,
                   vk::raii::DeviceMemory &bufferMemory);
+
+// CMake copies shaders/, models/ and textures/ next to the binary, so paths
+// resolve against the executable rather than whatever the cwd happens to be.
+std::string assetPath(const std::string &relative);
 
 std::vector<char> readFile(const std::string &filename);

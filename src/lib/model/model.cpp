@@ -45,7 +45,7 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   std::string err;
   std::string warn;
 
-  bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, path);
+  bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, assetPath(path));
 
   if (!warn.empty()) {
     std::cout << "glTF warning: " << warn << std::endl;
@@ -171,7 +171,8 @@ std::shared_ptr<Mesh> loadHeightfield(const std::string &path, float cellSize,
   int width = 0, height = 0, channels = 0;
   // Force 1 channel: any greyscale/RGB/RGBA heightmap reads the same way,
   // and stb does the luminance conversion for us.
-  stbi_uc *pixels = stbi_load(path.c_str(), &width, &height, &channels, 1);
+  stbi_uc *pixels =
+      stbi_load(assetPath(path).c_str(), &width, &height, &channels, 1);
   if (pixels == nullptr) {
     throw std::runtime_error("failed to load heightmap " + path + ": " +
                              stbi_failure_reason());

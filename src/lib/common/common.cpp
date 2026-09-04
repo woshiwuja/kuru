@@ -1,4 +1,5 @@
 #include "../core/core.hpp"
+#include <SDL3/SDL_filesystem.h>
 #include <fstream>
 uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties props,
                         uint32_t typeFilter,
@@ -30,10 +31,16 @@ void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
   buffer.bindMemory(*bufferMemory, 0);
 }
 
+std::string assetPath(const std::string &relative) {
+  const char *base = SDL_GetBasePath(); // owned by SDL, valid after SDL_Init
+  return base != nullptr ? base + relative : relative;
+}
+
 std::vector<char> readFile(const std::string &filename) {
-  std::ifstream file(filename, std::ios::ate | std::ios::binary);
+  const std::string resolved = assetPath(filename);
+  std::ifstream file(resolved, std::ios::ate | std::ios::binary);
   if (!file.is_open()) {
-    throw std::runtime_error("failed to open file: " + filename);
+    throw std::runtime_error("failed to open file: " + resolved);
   }
 
   size_t fileSize = static_cast<size_t>(file.tellg());

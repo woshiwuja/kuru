@@ -81,9 +81,10 @@ void Core::mainLoop() {
 
 void Core::cleanup() {
   device->wait();
-  // Entities hold descriptor sets and buffers owned by the plugin pools, so the
-  // registry goes first, then the plugins, then the device that made them.
-  reg.clear();
+  // Destroy the whole registry, not just the entities: the mesh and texture
+  // caches live in reg.ctx(), which reg.clear() leaves alone, and they hold
+  // buffers and images that must go while the device is still around.
+  reg = entt::registry{};
   plugins.clear();
   sync = nullptr;
   commandBuffers.clear();
