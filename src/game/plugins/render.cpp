@@ -160,7 +160,7 @@ void RenderPlugin::createDescriptorPool() {
       vk::raii::DescriptorPool(Core::get()->device->device, poolInfo);
 }
 
-void RenderPlugin::run(entt::registry &reg) {
+void RenderPlugin::update(entt::registry &reg) {
   updateUniforms(reg);
   drawMeshes(reg);
 }

@@ -40,5 +40,5 @@ struct Camera {
 // the FrameContext.
 struct CameraPlugin : public Plugin {
 	void init(entt::registry &reg) override;
-	void run(entt::registry &reg) override;
+	void update(entt::registry &reg) override;
 };

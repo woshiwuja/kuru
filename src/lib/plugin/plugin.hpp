@@ -19,8 +19,20 @@ struct FrameContext {
 
 // A plugin is a set of components and systems. Concrete plugins live in
 // src/game/plugins; this is only the interface Core runs them through.
+//
+// Core runs the three frame hooks as three passes over every plugin, not one
+// pass calling all three: that is what lets a plugin open something in start()
+// that the others use in update() and close it in end(). Within a pass the
+// order is registration order.
 struct Plugin {
 	virtual ~Plugin() = default;
+
+	// Once, after the device exists.
 	virtual void init(entt::registry &reg) {}
-	virtual void run(entt::registry &reg) {}
+	// Before the render pass opens: uploads, spawning, opening a UI frame.
+	virtual void start(entt::registry &reg) {}
+	// Inside the render pass: the drawing.
+	virtual void update(entt::registry &reg) {}
+	// Still inside the render pass, after every update: whatever has to go last.
+	virtual void end(entt::registry &reg) {}
 };

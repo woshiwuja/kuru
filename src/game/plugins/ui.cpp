@@ -69,13 +69,10 @@ UiPlugin::~UiPlugin() {
   ImGui::DestroyContext();
 }
 
-void UiPlugin::run(entt::registry &reg) {
-  auto &frame = reg.ctx().get<FrameContext>();
-  auto *core = Core::get();
-
+void UiPlugin::start(entt::registry &reg) {
   // The SDL queue was already drained this frame, so replay it here: the
   // backend needs every event, not the digest the camera reads.
-  for (const SDL_Event &event : core->eventManager->events) {
+  for (const SDL_Event &event : Core::get()->eventManager->events) {
     ImGui_ImplSDL3_ProcessEvent(&event);
   }
 
@@ -86,18 +83,22 @@ void UiPlugin::run(entt::registry &reg) {
   // Transparent central node: the scene shows through, panels dock around it.
   ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                ImGuiDockNodeFlags_PassthruCentralNode);
-  drawPanels(reg);
+}
+
+void UiPlugin::end(entt::registry &reg) {
+  auto &frame = reg.ctx().get<FrameContext>();
 
   ImGui::Render();
-  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
-                                  **frame.commandBuffer);
+  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), **frame.commandBuffer);
 
   const ImGuiIO &io = ImGui::GetIO();
   frame.uiCapturesMouse = io.WantCaptureMouse;
   frame.uiCapturesKeyboard = io.WantCaptureKeyboard;
 }
 
-void UiPlugin::drawPanels(entt::registry &reg) {
+// This plugin's own windows. Any other plugin can add its own from update():
+// the frame is open from start() to end().
+void UiPlugin::update(entt::registry &reg) {
   const auto *core = Core::get();
 
   if (ImGui::Begin("Scene")) {

@@ -56,7 +56,7 @@ struct RenderPlugin : Plugin {
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
 
 	void init(entt::registry &reg) override;
-	void run(entt::registry &reg) override;
+	void update(entt::registry &reg) override;
 
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();

@@ -128,6 +128,17 @@ void Core::createCommandBuffers() {
 void Core::recordCommandBuffer(uint32_t imageIndex) {
   auto &commandBuffer = commandBuffers[sync->frameIndex];
   commandBuffer.begin({});
+
+  // Everything per-entity is the plugins' job; Core only hands them the frame.
+  // view and proj are left to whichever plugin owns the camera.
+  auto &frame = reg.ctx().get<FrameContext>();
+  frame.commandBuffer = &commandBuffer;
+  frame.frameIndex = sync->frameIndex;
+  frame.extent = graphics->swapChainExtent;
+  // Outside the pass: this is where uploads and spawning belong.
+  for (auto &plugin : plugins) {
+    plugin->start(reg);
+  }
   // Before starting rendering, transition the swapchain image to
   // COLOR_ATTACHMENT_OPTIMAL
   transitionImageLayout(
@@ -172,16 +183,11 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
       .pDepthAttachment = &depthAttachmentInfo};
   commandBuffer.beginRendering(renderingInfo);
 
-  // Everything per-entity is the plugins' job; Core only hands them the frame.
-  auto &frame = reg.ctx().get<FrameContext>();
-  frame.commandBuffer = &commandBuffer;
-  frame.frameIndex = sync->frameIndex;
-  frame.extent = graphics->swapChainExtent;
-  // view and proj are left to whichever plugin owns the camera.
-  // ponytail: every plugin runs inside the render pass; split into phases when
-  // one that does not draw shows up.
   for (auto &plugin : plugins) {
-    plugin->run(reg);
+    plugin->update(reg);
+  }
+  for (auto &plugin : plugins) {
+    plugin->end(reg);
   }
 
   commandBuffer.endRendering();

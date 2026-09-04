@@ -13,5 +13,5 @@ struct Map {
 };
 
 struct HeightmapPlugin : public Plugin {
-	void run(entt::registry &reg) override;
+	void start(entt::registry &reg) override;
 };

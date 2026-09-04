@@ -20,7 +20,7 @@ void CameraPlugin::init(entt::registry &reg) {
   reg.emplace<Camera>(reg.create());
 }
 
-void CameraPlugin::run(entt::registry &reg) {
+void CameraPlugin::update(entt::registry &reg) {
   auto &frame = reg.ctx().get<FrameContext>();
   const auto *core = Core::get();
   const auto &input = *core->eventManager;

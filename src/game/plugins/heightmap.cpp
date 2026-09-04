@@ -3,7 +3,7 @@
 #include "plugins.hpp"
 #include "../../lib/model/model.hpp"
 
-void HeightmapPlugin::run(entt::registry &reg) {
+void HeightmapPlugin::start(entt::registry &reg) {
   // A Map with no MeshRef has not been built yet. Collect first: emplacing into
   // a storage the view iterates would invalidate it.
   std::vector<entt::entity> pending;
