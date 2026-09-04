@@ -3,23 +3,36 @@
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 
-// WASD move on the ground plane, Q/E turn, middle mouse drag looks around,
-// wheel dollies along the view direction. The speeds are feel, not physics:
-// they are meant to be tuned.
+// An orbit camera. It never rotates in place: it swings around a pivot pinned
+// to the ground plane, so what is under the cursor stays roughly put while you
+// drag. WASD pans the pivot, middle drag orbits, the wheel changes the radius.
+// The speeds are feel, not physics: they are meant to be tuned.
 struct Camera {
-	glm::vec3 position = {2.0f, 2.0f, 2.0f};
-	float     yaw      = -135.0f; // degrees, around +Y
-	float     pitch    = -30.0f;
+	// What the camera looks at and turns around. Y is held at groundHeight, so
+	// panning slides it across the ground rather than through it.
+	glm::vec3 pivot        = {0.0f, 0.0f, 0.0f};
+	// ponytail: a constant. Sample the heightfield here the day the terrain
+	// under the pivot stops being flat enough.
+	float     groundHeight = 0.0f;
 
-	float fov              = 45.0f; // degrees
-	float nearPlane        = 0.1f;
-	float farPlane         = 40.0f;
-	float moveSpeed        = 3.0f;  // world units per second
+	float yaw      = -135.0f; // degrees, around +Y
+	float pitch    = -30.0f;  // degrees, negative looks down at the pivot
+	float distance = 5.0f;    // radius of the orbit, in world units
+
+	float minDistance = 0.5f;
+	float maxDistance = 60.0f;
+	float fov         = 45.0f; // degrees
+	float nearPlane   = 0.1f;
+	float farPlane    = 200.0f;
+
+	float panSpeed         = 3.0f;  // world units per second
 	float turnSpeed        = 90.0f; // degrees per second, Q/E
-	float lookSensitivity  = 0.15f; // degrees per pixel of mouse motion
-	float zoomSpeed        = 0.5f;  // world units per wheel notch
+	float orbitSensitivity = 0.3f;  // degrees per pixel of mouse motion
+	float zoomSpeed        = 0.1f;  // fraction of the radius per wheel notch
 
+	// Direction from the camera towards the pivot.
 	[[nodiscard]] glm::vec3 front() const;
+	[[nodiscard]] glm::vec3 position() const;
 };
 
 // Owns the camera entity and turns raw input into a view and a projection.
