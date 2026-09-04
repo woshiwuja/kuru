@@ -7,7 +7,10 @@ struct Device {
   uint32_t queueIndex = ~0;
   vk::raii::Queue queue = nullptr;
   std::vector<const char *> requiredDeviceExtension = {
-      vk::KHRSwapchainExtensionName, vk::KHRCreateRenderpass2ExtensionName};
+      vk::KHRSwapchainExtensionName, vk::KHRCreateRenderpass2ExtensionName,
+      // core in 1.3, but imgui's Vulkan backend refuses dynamic rendering
+      // unless the extension is named
+      vk::KHRDynamicRenderingExtensionName};
   void pickPhysicalDevice();
   void createLogicalDevice();
   bool isDeviceSuitable(vk::raii::PhysicalDevice const &physicalDevice);

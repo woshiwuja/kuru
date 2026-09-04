@@ -8,7 +8,7 @@ struct Graphics {
   vk::SurfaceFormatKHR swapChainSurfaceFormat;
   vk::Extent2D swapChainExtent;
   std::vector<vk::raii::ImageView> swapChainImageViews;
-  uint32_t swapMinImageCount;
+  uint32_t swapMinImageCount = 0;
   vk::SurfaceCapabilitiesKHR capabilities;
   vk::raii::Image depthImage = nullptr;
   vk::raii::DeviceMemory depthImageMemory = nullptr;

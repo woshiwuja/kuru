@@ -3,6 +3,7 @@
 #include "game/plugins/mesh_registry.hpp"
 #include "game/plugins/plugins.hpp"
 #include "game/plugins/render.hpp"
+#include "game/plugins/ui.hpp"
 #include "lib/core/core.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +21,7 @@ int main()
 		app.addPlugin(std::make_unique<CameraPlugin>());
 		app.addPlugin(std::make_unique<RenderPlugin>());
 		app.addPlugin(std::make_unique<HeightmapPlugin>());
+		app.addPlugin(std::make_unique<UiPlugin>()); // last: draws over the scene
 		app.init();
 
 		spawn(app.reg, "models/viking_room.glb", "textures/viking_room.ktx2");

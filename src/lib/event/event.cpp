@@ -7,9 +7,11 @@ void EventManager::pump() {
   mouseDeltaX = 0.0f;
   mouseDeltaY = 0.0f;
   wheel = 0.0f;
+  events.clear();
 
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
+    events.push_back(event);
     switch (event.type) {
     case SDL_EVENT_QUIT:
       quit = true;

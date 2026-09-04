@@ -35,14 +35,15 @@ void CameraPlugin::run(entt::registry &reg) {
 
   // Orbit. Screen space drives it directly: horizontal drag swings around the
   // pivot, vertical drag raises and lowers the eye over it.
-  if (input.middleDown) {
+  if (input.middleDown && !frame.uiCapturesMouse) {
     camera.yaw += input.mouseDeltaX * camera.orbitSensitivity;
     camera.pitch -= input.mouseDeltaY * camera.orbitSensitivity;
   }
-  if (input.down(SDL_SCANCODE_Q)) {
+  const bool keyboardFree = !frame.uiCapturesKeyboard;
+  if (keyboardFree && input.down(SDL_SCANCODE_Q)) {
     camera.yaw -= camera.turnSpeed * deltaTime;
   }
-  if (input.down(SDL_SCANCODE_E)) {
+  if (keyboardFree && input.down(SDL_SCANCODE_E)) {
     camera.yaw += camera.turnSpeed * deltaTime;
   }
   // Straight up or down would collapse the flattened basis below, and the
@@ -51,7 +52,9 @@ void CameraPlugin::run(entt::registry &reg) {
 
   // Zoom is the orbit radius, scaled by itself so it stays usable close in and
   // far out alike.
-  camera.distance *= 1.0f - input.wheel * camera.zoomSpeed;
+  if (!frame.uiCapturesMouse) {
+    camera.distance *= 1.0f - input.wheel * camera.zoomSpeed;
+  }
   camera.distance =
       std::clamp(camera.distance, camera.minDistance, camera.maxDistance);
 
@@ -62,10 +65,10 @@ void CameraPlugin::run(entt::registry &reg) {
   const glm::vec3 flatRight = glm::normalize(glm::cross(flatFront, WORLD_UP));
 
   const float step = camera.panSpeed * deltaTime;
-  if (input.down(SDL_SCANCODE_W)) camera.pivot += flatFront * step;
-  if (input.down(SDL_SCANCODE_S)) camera.pivot -= flatFront * step;
-  if (input.down(SDL_SCANCODE_D)) camera.pivot += flatRight * step;
-  if (input.down(SDL_SCANCODE_A)) camera.pivot -= flatRight * step;
+  if (keyboardFree && input.down(SDL_SCANCODE_W)) camera.pivot += flatFront * step;
+  if (keyboardFree && input.down(SDL_SCANCODE_S)) camera.pivot -= flatFront * step;
+  if (keyboardFree && input.down(SDL_SCANCODE_D)) camera.pivot += flatRight * step;
+  if (keyboardFree && input.down(SDL_SCANCODE_A)) camera.pivot -= flatRight * step;
   camera.pivot.y = camera.groundHeight;
 
   frame.view = glm::lookAt(camera.position(), camera.pivot, WORLD_UP);

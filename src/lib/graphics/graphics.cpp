@@ -92,10 +92,10 @@ void Graphics::createImageViews() {
 }
 
 void Graphics::chooseSwapMinImageCount() {
-    auto minImageCount = std::max(3u, capabilities.minImageCount);
+    swapMinImageCount = std::max(3u, capabilities.minImageCount);
     if ((0 < capabilities.maxImageCount) &&
-        (capabilities.maxImageCount < minImageCount)) {
-      minImageCount = capabilities.maxImageCount;
+        (capabilities.maxImageCount < swapMinImageCount)) {
+      swapMinImageCount = capabilities.maxImageCount;
     }
 }
 

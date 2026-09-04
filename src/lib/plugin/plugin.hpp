@@ -11,6 +11,10 @@ struct FrameContext {
 	vk::Extent2D                   extent        = {};
 	glm::mat4                      view          = glm::mat4(1.0f);
 	glm::mat4                      proj          = glm::mat4(1.0f);
+	// Set by whatever plugin draws the UI, read by whoever consumes input. It
+	// lags a frame for plugins that run before the UI, which nobody can see.
+	bool                           uiCapturesMouse    = false;
+	bool                           uiCapturesKeyboard = false;
 };
 
 // A plugin is a set of components and systems. Concrete plugins live in

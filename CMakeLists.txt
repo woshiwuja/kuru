@@ -61,13 +61,28 @@ FetchContent_Declare(sdl3
   GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
   GIT_TAG release-3.4.16
   GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(glm glfw entt stb tinygltf ktx sdl3)
+# header/source drop, no CMakeLists of its own
+FetchContent_Declare(imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG v1.92.9b-docking
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR no-configure)
+FetchContent_MakeAvailable(glm glfw entt stb tinygltf ktx sdl3 imgui)
 
 file(GLOB_RECURSE KURU_SRC src/lib/*.cpp src/game/*.cpp)
-add_executable(Kuru src/main.cpp ${KURU_SRC})
+# imgui ships sources, not a library: compile the core plus the two backends we use
+set(IMGUI_SRC
+  ${imgui_SOURCE_DIR}/imgui.cpp
+  ${imgui_SOURCE_DIR}/imgui_draw.cpp
+  ${imgui_SOURCE_DIR}/imgui_tables.cpp
+  ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
+add_executable(Kuru src/main.cpp ${KURU_SRC} ${IMGUI_SRC})
 target_link_libraries(Kuru PRIVATE Vulkan::Vulkan glfw SDL3::SDL3 glm::glm EnTT::EnTT ktx)
 # stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
-target_include_directories(Kuru PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR})
+target_include_directories(Kuru PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR}
+  ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 # main.cpp initialises vk structs with designated initialisers
 # main.cpp expects the tinygltf impl macro on the command line (see its include block)
 target_compile_definitions(Kuru PRIVATE VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
