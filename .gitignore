@@ -1,0 +1,10 @@
+build/
+.cache/
+compile_commands.json
+
+# Vulkan SDK unpacked in the project root (1.8G) and its tarball
+vulkansdk-linux-x86_64-*/
+*.tar.xz
+
+# stray, not an asset
+textures/*.pdf
