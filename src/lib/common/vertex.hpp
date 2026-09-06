@@ -18,22 +18,25 @@ struct Vertex
 	glm::vec3 pos;
 	glm::vec3 color;
 	glm::vec2 texCoord;
+	glm::vec3 normal;
 
 	static vk::VertexInputBindingDescription getBindingDescription()
 	{
 		return {0, sizeof(Vertex), vk::VertexInputRate::eVertex};
 	}
-	static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions()
+	static std::array<vk::VertexInputAttributeDescription, 4> getAttributeDescriptions()
 	{
 		return {
 		    vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)),
 		    vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
-		    vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord))};
+		    vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texCoord)),
+		    vk::VertexInputAttributeDescription(3, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal))};
 	}
 
 	bool operator==(const Vertex &other) const
 	{
-		return pos == other.pos && color == other.color && texCoord == other.texCoord;
+		return pos == other.pos && color == other.color && texCoord == other.texCoord &&
+		       normal == other.normal;
 	}
 };
 
@@ -42,7 +45,8 @@ struct std::hash<Vertex>
 {
 	size_t operator()(Vertex const &vertex) const noexcept
 	{
-		return ((std::hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.texCoord) << 1);
+		return ((std::hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+		       (hash<glm::vec2>()(vertex.texCoord) << 1) ^ (hash<glm::vec3>()(vertex.normal) << 1);
 	}
 };
 
@@ -53,4 +57,7 @@ struct UniformBufferObject
 	alignas(16) glm::mat4 proj;
 	// x: 1 = procedural terrain shading, 0 = plain textured mesh. y, z: world height range.
 	alignas(16) glm::vec4 material;
+	// xyz: sun direction/color, normalized and scaled by LightingPlugin's DirectionalLight. w unused.
+	alignas(16) glm::vec4 sunDirection;
+	alignas(16) glm::vec4 sunColor;
 };

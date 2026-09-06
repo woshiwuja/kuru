@@ -28,9 +28,19 @@ std::shared_ptr<Texture> getTexture(entt::registry &reg,
       .first->second.handle();
 }
 
-entt::entity spawn(entt::registry &reg, const std::string &meshPath,
-                   const std::string &texturePath, glm::vec4 params,
-                   Transform transform) {
-  return renderer(reg).spawn(reg, getMesh(reg, meshPath).handle(),
-                             getTexture(reg, texturePath), params, transform);
+void spawn(entt::registry &reg, entt::entity entity,
+           const std::string &meshPath, const std::string &texturePath,
+           glm::vec4 params, Transform transform) {
+  auto mesh = getMesh(reg, meshPath);
+  if (params.x >= 0.5f) {
+    params.y = mesh->minY;
+    params.z = mesh->maxY;
+  }
+  // Fallback for any submesh whose glTF primitive had no material of its own
+  // (or for a mesh with none at all) - RenderPlugin::attach only reaches for
+  // this when a submesh's own texture is null. An empty texturePath still
+  // resolves, to Texture::load's fuchsia placeholder.
+  std::shared_ptr<Texture> fallbackTexture = getTexture(reg, texturePath);
+  renderer(reg).spawn(reg, entity, mesh.handle(), std::move(fallbackTexture),
+                      params, transform);
 }

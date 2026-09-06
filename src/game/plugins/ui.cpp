@@ -1,10 +1,12 @@
 #include "ui.hpp"
-#include "camera.hpp"
-#include "render.hpp"
 #include "../../lib/core/core.hpp"
+#include "camera.hpp"
+#include "lighting.hpp"
+#include "render.hpp"
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+
 
 namespace {
 void checkVkResult(VkResult result) {
@@ -100,8 +102,10 @@ void UiPlugin::end(entt::registry &reg) {
 // the frame is open from start() to end().
 void UiPlugin::update(entt::registry &reg) {
   const auto *core = Core::get();
-
   if (ImGui::Begin("Scene")) {
+    bool demo = true;
+    // ImGui::ShowStyleEditor();
+    ImGui::ShowDemoWindow(&demo);
     ImGui::Text("%.1f fps (%.2f ms)", 1.0f / std::max(core->deltaTime, 1e-6f),
                 core->deltaTime * 1000.0f);
     ImGui::Text("drawables: %zu", reg.view<MeshRef>().size());
@@ -118,6 +122,22 @@ void UiPlugin::update(entt::registry &reg) {
       ImGui::SliderFloat("pitch", &camera.pitch, -89.0f, 89.0f);
       ImGui::SliderFloat("distance", &camera.distance, camera.minDistance,
                          camera.maxDistance);
+      if (ImGui::Button("back away")) {
+        // Blind-safe escape for when the camera ends up inside the mesh:
+        // snap to the origin at max range rather than fumbling sliders with
+        // nothing visible to judge them by.
+        camera.pivot = {0.0f, 0.0f, 0.0f};
+        camera.distance = camera.maxDistance;
+      }
+      ImGui::SeparatorText("range");
+      ImGui::DragFloat("min distance", &camera.minDistance, 0.1f, 0.01f,
+                       camera.maxDistance);
+      ImGui::DragFloat("max distance", &camera.maxDistance, 1.0f,
+                       camera.minDistance, 1e6f);
+      ImGui::DragFloat("near plane", &camera.nearPlane, 0.01f, 0.001f,
+                       camera.farPlane);
+      ImGui::DragFloat("far plane", &camera.farPlane, 1.0f, camera.nearPlane,
+                       1e6f);
       ImGui::SeparatorText("feel");
       ImGui::DragFloat("pan speed", &camera.panSpeed, 0.1f, 0.0f, 100.0f);
       ImGui::DragFloat("turn speed", &camera.turnSpeed, 1.0f, 0.0f, 720.0f);
@@ -129,4 +149,24 @@ void UiPlugin::update(entt::registry &reg) {
     }
   }
   ImGui::End();
+
+  if (ImGui::Begin("Transforms")) {
+    for (auto [entity, transform] : reg.view<Transform>().each()) {
+      ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
+      if (ImGui::CollapsingHeader(
+              ("entity " + std::to_string(entt::to_integral(entity)))
+                  .c_str())) {
+        ImGui::DragFloat3("position", &transform.position.x, 5.0f);
+        ImGui::DragFloat3("rotation", &transform.rotation.x, .1f);
+        ImGui::DragFloat3("scale", &transform.scale.x, 0.01f, 0.001f, 1000.0f);
+        if (ImGui::Button("center at origin")) {
+          transform.position = {0.0f, 0.0f, 0.0f};
+        }
+      }
+      ImGui::PopID();
+    }
+  }
+  ImGui::End();
+
+
 }

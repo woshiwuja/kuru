@@ -15,6 +15,20 @@ if(_sdk AND NOT DEFINED ENV{VULKAN_SDK})
 endif()
 find_package(Vulkan REQUIRED)
 
+if(MSVC)
+  # rc.exe (used for SDL3's version.rc) has no toolchain auto-detection like clang-cl does;
+  # it only finds SDK headers (winresrc.h) via explicit -I, so point it at the SDK CMAKE_RC_COMPILER resolved.
+  get_filename_component(_rc_ver_dir "${CMAKE_RC_COMPILER}" DIRECTORY) # .../bin/<ver>/x64
+  get_filename_component(_rc_ver_dir "${_rc_ver_dir}" DIRECTORY)       # .../bin/<ver>
+  get_filename_component(_sdk_ver "${_rc_ver_dir}" NAME)
+  get_filename_component(_sdk_root "${_rc_ver_dir}" DIRECTORY)         # .../bin
+  get_filename_component(_sdk_root "${_sdk_root}" DIRECTORY)           # .../Windows Kits/10
+  set(_sdk_include "${_sdk_root}/Include/${_sdk_ver}")
+  if(EXISTS "${_sdk_include}/um/winresrc.h")
+    string(APPEND CMAKE_RC_FLAGS " /I \"${_sdk_include}/um\" /I \"${_sdk_include}/shared\" /I \"${_sdk_include}/ucrt\"")
+  endif()
+endif()
+
 include(FetchContent)
 FetchContent_Declare(glm
   GIT_REPOSITORY https://github.com/g-truc/glm.git
@@ -67,19 +81,40 @@ FetchContent_Declare(imgui
   GIT_TAG v1.92.9b-docking
   GIT_SHALLOW TRUE
   SOURCE_SUBDIR no-configure)
-FetchContent_MakeAvailable(glm glfw entt stb tinygltf ktx sdl3 imgui)
+# Jolt defaults to the static MSVC CRT (/MT), which mismatches everything else here (/MD) at link time
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+# Jolt's CMakeLists lives in Build/, not the repo root
+FetchContent_Declare(jolt
+  GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+  GIT_TAG v5.6.0
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR Build)
+# CACHE ... FORCE: v1.6.0's cmake_minimum_required(3.1) defaults CMP0077 to OLD,
+# so option() ignores a plain set() and would otherwise pull in the SDL2 demo
+set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
+# ponytail: v1.6.0's cmake_minimum_required(3.1) predates CMake 4's removal of <3.5 support
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+FetchContent_Declare(recastnavigation
+  GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
+  GIT_TAG v1.6.0
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(glm glfw entt stb tinygltf ktx sdl3 imgui jolt recastnavigation)
 
 file(GLOB_RECURSE KURU_SRC src/lib/*.cpp src/game/*.cpp)
-# imgui ships sources, not a library: compile the core plus the two backends we use
 set(IMGUI_SRC
   ${imgui_SOURCE_DIR}/imgui.cpp
   ${imgui_SOURCE_DIR}/imgui_draw.cpp
   ${imgui_SOURCE_DIR}/imgui_tables.cpp
   ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+  ${imgui_SOURCE_DIR}/imgui_demo.cpp # ui.cpp calls ImGui::ShowDemoWindow
   ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
   ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
 add_executable(Kuru src/main.cpp ${KURU_SRC} ${IMGUI_SRC})
-target_link_libraries(Kuru PRIVATE Vulkan::Vulkan glfw SDL3::SDL3 glm::glm EnTT::EnTT ktx)
+target_link_libraries(Kuru PRIVATE Vulkan::Vulkan glfw SDL3::SDL3 glm::glm EnTT::EnTT ktx
+  Jolt::Jolt RecastNavigation::Recast RecastNavigation::Detour
+  RecastNavigation::DetourCrowd RecastNavigation::DetourTileCache RecastNavigation::DebugUtils)
 # stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
 target_include_directories(Kuru PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR}
   ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
@@ -101,5 +136,19 @@ add_custom_command(
           -o ${CMAKE_CURRENT_BINARY_DIR}/shaders/slang.spv
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/slang.slang
   VERBATIM)
-add_custom_target(shaders DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders/slang.spv)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/sky_clouds.spv
+  COMMAND $ENV{VULKAN_SDK}/bin/slangc ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_clouds.slang
+          -target spirv -emit-spirv-directly -fvk-use-entrypoint-name
+          -o ${CMAKE_CURRENT_BINARY_DIR}/shaders/sky_clouds.spv
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_clouds.slang
+  VERBATIM)
+add_custom_target(shaders DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders/slang.spv
+                                  ${CMAKE_CURRENT_BINARY_DIR}/shaders/sky_clouds.spv)
 add_dependencies(Kuru shaders)
+
+# editor tooling (clangd, zed) looks for compile_commands.json at the repo root
+add_custom_target(compile_commands ALL
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          ${CMAKE_BINARY_DIR}/compile_commands.json ${CMAKE_SOURCE_DIR}/compile_commands.json)
+add_dependencies(Kuru compile_commands)

@@ -56,14 +56,19 @@ void Device::createLogicalDevice() {
 
     // query for Vulkan 1.3 features
     auto features = physicalDevice.getFeatures2();
+    vk::PhysicalDeviceVulkan11Features vulkan11Features;
     vk::PhysicalDeviceVulkan13Features vulkan13Features;
     vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
         extendedDynamicStateFeatures;
+    // sky_clouds.slang's SV_VertexID lowers to VertexIndex - BaseVertex, which
+    // needs this even though every draw here uses firstVertex 0.
+    vulkan11Features.shaderDrawParameters = vk::True;
     vulkan13Features.dynamicRendering = vk::True;
     vulkan13Features.synchronization2 = vk::True;
     extendedDynamicStateFeatures.extendedDynamicState = vk::True;
     vulkan13Features.pNext = &extendedDynamicStateFeatures;
-    features.pNext = &vulkan13Features;
+    vulkan11Features.pNext = &vulkan13Features;
+    features.pNext = &vulkan11Features;
     // create a Device
     float queuePriority = 0.5f;
     vk::DeviceQueueCreateInfo deviceQueueCreateInfo{
@@ -112,9 +117,12 @@ bool Device::isDeviceSuitable(vk::raii::PhysicalDevice const &physicalDevice) {
 
     // Check if the physicalDevice supports the required features
     auto features = physicalDevice.template getFeatures2<
-        vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,
+        vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
+        vk::PhysicalDeviceVulkan13Features,
         vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
     bool supportsRequiredFeatures =
+        features.template get<vk::PhysicalDeviceVulkan11Features>()
+            .shaderDrawParameters &&
         features.template get<vk::PhysicalDeviceVulkan13Features>()
             .dynamicRendering &&
         features

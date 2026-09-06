@@ -26,15 +26,12 @@ void CameraPlugin::update(entt::registry &reg) {
   const auto &input = *core->eventManager;
   const float deltaTime = core->deltaTime;
 
-  // ponytail: first camera wins. Add an Active tag the day there are two.
   auto view = reg.view<Camera>();
   if (view.begin() == view.end()) {
     return;
   }
   Camera &camera = view.get<Camera>(*view.begin());
 
-  // Orbit. Screen space drives it directly: horizontal drag swings around the
-  // pivot, vertical drag raises and lowers the eye over it.
   if (input.middleDown && !frame.uiCapturesMouse) {
     camera.yaw += input.mouseDeltaX * camera.orbitSensitivity;
     camera.pitch -= input.mouseDeltaY * camera.orbitSensitivity;
@@ -46,12 +43,8 @@ void CameraPlugin::update(entt::registry &reg) {
   if (keyboardFree && input.down(SDL_SCANCODE_E)) {
     camera.yaw += camera.turnSpeed * deltaTime;
   }
-  // Straight up or down would collapse the flattened basis below, and the
-  // orbit would gimbal.
   camera.pitch = std::clamp(camera.pitch, -89.0f, 89.0f);
 
-  // Zoom is the orbit radius, scaled by itself so it stays usable close in and
-  // far out alike.
   if (!frame.uiCapturesMouse) {
     camera.distance *= 1.0f - input.wheel * camera.zoomSpeed;
   }
@@ -78,4 +71,17 @@ void CameraPlugin::update(entt::registry &reg) {
           static_cast<float>(frame.extent.height),
       camera.nearPlane, camera.farPlane);
   frame.proj[1][1] *= -1; // glm is GL-handed, Vulkan's Y points the other way
+  // sky_clouds.slang unprojects assuming this (pre-reversal) NDC convention.
+  frame.skyRayProj = frame.proj;
+
+  // Reversed-Z: near maps to depth 1, far to depth 0. A standard depth buffer
+  // spends almost all of its precision within the first few percent of
+  // [nearPlane, farPlane]; this flip (needs GLM_FORCE_DEPTH_ZERO_TO_ONE, set
+  // in CMakeLists.txt) redistributes it evenly in 1/z instead, so far terrain
+  // stops z-fighting long before farPlane needs to come down to hide it.
+  static const glm::mat4 REVERSE_Z(1, 0, 0, 0,
+                                   0, 1, 0, 0,
+                                   0, 0, -1, 0,
+                                   0, 0, 1, 1);
+  frame.proj = REVERSE_Z * frame.proj;
 }

@@ -4,7 +4,10 @@
 #include <vulkan/vulkan_raii.hpp>
 
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-constexpr uint32_t MAX_OBJECTS = 64; // descriptor pool ceiling, not a live count
+// Descriptor pool ceiling, not a live count. Counts submeshes, not entities:
+// a multi-material mesh (e.g. a character with separate body/claws/head/legs
+// textures) consumes one descriptor set per submesh, not just one per entity.
+constexpr uint32_t MAX_OBJECTS = 256;
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;

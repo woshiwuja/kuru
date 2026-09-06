@@ -61,6 +61,36 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
 
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
+  std::vector<SubMesh> submeshes;
+  // World height range, fed to the terrain shading in the UBO.
+  float minY = std::numeric_limits<float>::max();
+  float maxY = std::numeric_limits<float>::lowest();
+
+  // One texture per primitive's own material, if it has one. tinygltf decodes
+  // embedded/external images to tightly-packed RGBA8 by default.
+  const auto loadMaterialTexture =
+      [&](int materialIndex) -> std::shared_ptr<Texture> {
+    if (materialIndex < 0 ||
+        materialIndex >= static_cast<int>(model.materials.size())) {
+      return nullptr;
+    }
+    const auto &material = model.materials[materialIndex];
+    const int texIndex = material.pbrMetallicRoughness.baseColorTexture.index;
+    if (texIndex < 0 || texIndex >= static_cast<int>(model.textures.size())) {
+      return nullptr;
+    }
+    const int imgIndex = model.textures[texIndex].source;
+    if (imgIndex < 0 || imgIndex >= static_cast<int>(model.images.size())) {
+      return nullptr;
+    }
+    const tinygltf::Image &image = model.images[imgIndex];
+    if (image.image.empty()) {
+      return nullptr;
+    }
+    return loadTextureFromPixels(image.image.data(),
+                                 static_cast<uint32_t>(image.width),
+                                 static_cast<uint32_t>(image.height));
+  };
 
   for (const auto &mesh : model.meshes) {
     for (const auto &primitive : mesh.primitives) {
@@ -93,6 +123,20 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
         texCoordBuffer = &model.buffers[texCoordBufferView->buffer];
       }
 
+      // Get normals if available; meshes without them fall back to a flat
+      // up-facing normal rather than zero, which would light as pure black.
+      bool hasNormals =
+          primitive.attributes.find("NORMAL") != primitive.attributes.end();
+      const tinygltf::Accessor *normalAccessor = nullptr;
+      const tinygltf::BufferView *normalBufferView = nullptr;
+      const tinygltf::Buffer *normalBuffer = nullptr;
+
+      if (hasNormals) {
+        normalAccessor = &model.accessors[primitive.attributes.at("NORMAL")];
+        normalBufferView = &model.bufferViews[normalAccessor->bufferView];
+        normalBuffer = &model.buffers[normalBufferView->buffer];
+      }
+
       uint32_t baseVertex = static_cast<uint32_t>(vertices.size());
 
       for (size_t i = 0; i < posAccessor.count; i++) {
@@ -102,6 +146,8 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
             &posBuffer.data[posBufferView.byteOffset + posAccessor.byteOffset +
                             i * 12]);
         vertex.pos = {pos[0], pos[1], pos[2]};
+        minY = std::min(minY, vertex.pos.y);
+        maxY = std::max(maxY, vertex.pos.y);
 
         if (hasTexCoords) {
           const float *texCoord = reinterpret_cast<const float *>(
@@ -112,11 +158,21 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
           vertex.texCoord = {0.0f, 0.0f};
         }
 
+        if (hasNormals) {
+          const float *normal = reinterpret_cast<const float *>(
+              &normalBuffer->data[normalBufferView->byteOffset +
+                                  normalAccessor->byteOffset + i * 12]);
+          vertex.normal = {normal[0], normal[1], normal[2]};
+        } else {
+          vertex.normal = {0.0f, 1.0f, 0.0f};
+        }
+
         vertex.color = {1.0f, 1.0f, 1.0f};
 
         vertices.push_back(vertex);
       }
 
+      const uint32_t indexOffset = static_cast<uint32_t>(indices.size());
       const unsigned char *indexData =
           &indexBuffer
                .data[indexBufferView.byteOffset + indexAccessor.byteOffset];
@@ -158,86 +214,17 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
 
         indices.push_back(baseVertex + index);
       }
+
+      submeshes.push_back(SubMesh{indexOffset, static_cast<uint32_t>(indexCount),
+                                  loadMaterialTexture(primitive.material)});
     }
   }
 
   auto mesh = std::make_shared<Mesh>();
+  mesh->minY = minY;
+  mesh->maxY = maxY;
   mesh->upload(vertices, indices);
-  return mesh;
-}
+  mesh->submeshes = std::move(submeshes);
 
-std::shared_ptr<Mesh> loadHeightfield(const std::string &path, float cellSize,
-                                      float heightScale) {
-  int width = 0, height = 0, channels = 0;
-  // Force 1 channel: any greyscale/RGB/RGBA heightmap reads the same way,
-  // and stb does the luminance conversion for us.
-  stbi_uc *pixels =
-      stbi_load(assetPath(path).c_str(), &width, &height, &channels, 1);
-  if (pixels == nullptr) {
-    throw std::runtime_error("failed to load heightmap " + path + ": " +
-                             stbi_failure_reason());
-  }
-  if (width < 2 || height < 2) {
-    stbi_image_free(pixels);
-    throw std::runtime_error("heightmap must be at least 2x2: " + path);
-  }
-
-  auto mesh = std::make_shared<Mesh>();
-  mesh->minY = std::numeric_limits<float>::max();
-  mesh->maxY = std::numeric_limits<float>::lowest();
-
-  std::vector<Vertex> vertices;
-  std::vector<uint32_t> indices;
-  const float originX = -0.5f * static_cast<float>(width - 1) * cellSize;
-  const float originZ = -0.5f * static_cast<float>(height - 1) * cellSize;
-
-  vertices.reserve(static_cast<size_t>(width) * height);
-  for (int j = 0; j < height; j++) {
-    for (int i = 0; i < width; i++) {
-      const float u = static_cast<float>(i) / (width - 1);
-      const float v = static_cast<float>(j) / (height - 1);
-
-      const float y =
-          static_cast<float>(pixels[static_cast<size_t>(j) * width + i]) /
-          255.0f * heightScale;
-
-      Vertex vertex{};
-      vertex.pos = {originX + static_cast<float>(i) * cellSize, y,
-                    originZ + static_cast<float>(j) * cellSize};
-      vertex.color = {1.0f, 1.0f, 1.0f};
-      vertex.texCoord = {u, v};
-      vertices.push_back(vertex);
-
-      mesh->minY = std::min(mesh->minY, y);
-      mesh->maxY = std::max(mesh->maxY, y);
-    }
-  }
-  stbi_image_free(pixels);
-
-  // Two triangles per cell, wound so the +Y face is the front one under
-  // eCounterClockwise + eBack culling. Swap C and B below if it renders
-  // inside-out.
-  indices.reserve(static_cast<size_t>(width - 1) * (height - 1) * 6);
-  for (int j = 0; j < height - 1; j++) {
-    for (int i = 0; i < width - 1; i++) {
-      const uint32_t a = static_cast<uint32_t>(j) * width + i;
-      const uint32_t b = a + 1;
-      const uint32_t c = a + width;
-      const uint32_t d = c + 1;
-      for (uint32_t index : {a, c, b, b, c, d}) {
-        indices.push_back(index);
-      }
-    }
-  }
-
-  assert(indices.size() == static_cast<size_t>(width - 1) * (height - 1) * 6);
-  // The winding above is the easy thing to get backwards, and a culled
-  // terrain just looks missing. A ground surface's first triangle must face up.
-  const glm::vec3 &p0 = vertices[indices[0]].pos;
-  assert(glm::cross(vertices[indices[1]].pos - p0,
-                    vertices[indices[2]].pos - p0)
-             .y > 0.0f);
-
-  mesh->upload(vertices, indices);
   return mesh;
 }

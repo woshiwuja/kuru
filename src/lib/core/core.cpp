@@ -168,7 +168,9 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
       .loadOp = vk::AttachmentLoadOp::eClear,
       .storeOp = vk::AttachmentStoreOp::eStore,
       .clearValue = clearColor};
-  vk::ClearValue clearDepth = vk::ClearDepthStencilValue{1.0f, 0};
+  // Reversed-Z (see camera.cpp): 0 is the far plane, so that's the "nothing
+  // drawn yet" value now, not 1.
+  vk::ClearValue clearDepth = vk::ClearDepthStencilValue{0.0f, 0};
   vk::RenderingAttachmentInfo depthAttachmentInfo{
       .imageView = *graphics->depthImageView,
       .imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal,

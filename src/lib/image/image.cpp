@@ -1,7 +1,14 @@
 #include "image.hpp"
 #include "../common/common.hpp"
 #include "../core/core.hpp"
+#include <cstdio>
 #include <ktx.h>
+
+namespace {
+// Missing-texture magenta: solid 1x1, tiled by the sampler's wrap mode over
+// whatever UVs the mesh has.
+constexpr unsigned char FUCHSIA_PIXEL[4] = {255, 0, 255, 255};
+} // namespace
 
 void transitionImageLayout(const vk::raii::CommandBuffer &commandBuffer,
                            vk::Image image, vk::ImageLayout oldLayout,
@@ -85,6 +92,44 @@ std::shared_ptr<Texture> loadTexture(const std::string &path) {
   return texture;
 }
 
+std::shared_ptr<Texture> loadTextureFromPixels(const unsigned char *pixels, uint32_t width,
+                                               uint32_t height, vk::Format format) {
+  auto texture = std::make_shared<Texture>();
+  texture->loadFromPixels(pixels, width, height, format);
+  return texture;
+}
+
+void Texture::loadFromPixels(const unsigned char *pixels, uint32_t width, uint32_t height,
+                             vk::Format format) {
+  auto core = Core::get();
+  vk::DeviceSize imageSize = vk::DeviceSize(width) * height * 4;
+
+  vk::raii::Buffer       stagingBuffer       = nullptr;
+  vk::raii::DeviceMemory stagingBufferMemory = nullptr;
+  createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc,
+               vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+               stagingBuffer, stagingBufferMemory);
+
+  void *data = stagingBufferMemory.mapMemory(0, imageSize);
+  memcpy(data, pixels, imageSize);
+  stagingBufferMemory.unmapMemory();
+
+  core->graphics->createImage(width, height, format, vk::ImageTiling::eOptimal,
+              vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+              vk::MemoryPropertyFlagBits::eDeviceLocal, image, memory);
+
+  transitionImageLayout(image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+  copyBufferToImage(stagingBuffer, image, width, height);
+  transitionImageLayout(image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+  view = core->graphics->createImageView(image, format, vk::ImageAspectFlagBits::eColor);
+}
+
+void Texture::loadFallback()
+{
+	loadFromPixels(FUCHSIA_PIXEL, 1, 1);
+}
+
 void Texture::load(const std::string &path)
 {
 	auto core = Core::get();
@@ -96,7 +141,10 @@ void Texture::load(const std::string &path)
 
 	if (result != KTX_SUCCESS)
 	{
-		throw std::runtime_error("failed to load ktx texture " + path);
+		fprintf(stderr, "failed to load ktx texture %s, using a fuchsia placeholder\n",
+		        path.c_str());
+		loadFallback();
+		return;
 	}
 
 	uint32_t     texWidth       = kTexture->baseWidth;

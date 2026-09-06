@@ -1,8 +1,18 @@
 #pragma once
 #include "../common/vertex.hpp"
+#include "../image/image.hpp"
 #include <memory>
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
+
+// One glTF primitive's slice of the mesh's shared index buffer, plus its own
+// material texture (null if the primitive had none - falls back to whatever
+// texture the entity was spawned with).
+struct SubMesh {
+	uint32_t indexOffset = 0;
+	uint32_t indexCount  = 0;
+	std::shared_ptr<Texture> texture;
+};
 
 // Each mesh owns its own buffers so meshes load and unload independently.
 // The price is one bind pair per draw instead of one per frame; a shared arena
@@ -13,17 +23,15 @@ struct Mesh {
 	vk::raii::Buffer       indexBuffer        = nullptr;
 	vk::raii::DeviceMemory indexBufferMemory  = nullptr;
 	uint32_t               indexCount         = 0;
-	// World height range of this mesh, fed to the terrain shading in the UBO.
 	float minY = 0.0f;
 	float maxY = 0.0f;
+	// One entry per glTF primitive: a multi-material model (e.g. a character
+	// with separate body/claws/head/legs materials) needs one draw call and
+	// one texture per primitive, not one texture stretched over everything.
+	std::vector<SubMesh> submeshes;
 
 	void upload(const std::vector<Vertex> &vertices,
 	            const std::vector<uint32_t> &indices);
 };
 
 std::shared_ptr<Mesh> loadModel(const std::string &path);
-// Builds a grid mesh, one vertex per heightmap pixel. cellSize is world units
-// between samples, heightScale the world height of a full-white pixel.
-std::shared_ptr<Mesh> loadHeightfield(const std::string &path,
-                                      float cellSize = 0.08f,
-                                      float heightScale = 2.0f);

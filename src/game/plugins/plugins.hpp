@@ -15,9 +15,15 @@ RenderPlugin &renderer(entt::registry &reg);
 std::shared_ptr<Texture> getTexture(entt::registry &reg,
                                     const std::string &path);
 
-// Loads mesh and texture through their caches and hands the entity to the
-// renderer. For plain models: terrain comes in through HeightmapPlugin.
-entt::entity spawn(entt::registry &reg, const std::string &meshPath,
-                   const std::string &texturePath,
-                   glm::vec4 params = {0.0f, 0.0f, 1.0f, 0.0f},
-                   Transform transform = {});
+// Loads mesh and texture through their caches and attaches them to `entity`,
+// which the caller creates - so a mesh can be added to an entity that already
+// carries other components (e.g. a Character), instead of always landing on
+// a fresh entity of its own. params.x >= 0.5 asks for procedural terrain
+// shading, in which case params.y/z (the world height range) are filled in
+// from the mesh, overwriting whatever was passed in; texturePath can be empty
+// when the mesh carries its own embedded texture. transform is only applied
+// if `entity` doesn't already carry one.
+void spawn(entt::registry &reg, entt::entity entity,
+           const std::string &meshPath, const std::string &texturePath,
+           glm::vec4 params = {0.0f, 0.0f, 1.0f, 0.0f},
+           Transform transform = {});
