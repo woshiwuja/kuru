@@ -1,0 +1,5 @@
+BasedOnStyle: LLVM
+# Include order is load-bearing here: stb_image.h has to precede tiny_gltf.h so
+# the vendored copy is shadowed, and the *_IMPLEMENTATION headers only work in a
+# fixed order. Sorting them silently breaks the build.
+SortIncludes: Never
