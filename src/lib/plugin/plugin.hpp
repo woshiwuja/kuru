@@ -9,6 +9,8 @@ struct FrameContext {
 	vk::Extent2D                   extent        = {};
 	glm::mat4                      view          = glm::mat4(1.0f);
 	glm::mat4                      proj          = glm::mat4(1.0f);
+	// proj before the reversed-Z flip; sky_clouds.slang unprojects with it.
+	glm::mat4                      skyRayProj    = glm::mat4(1.0f);
 	bool                           uiCapturesMouse    = false;
 	bool                           uiCapturesKeyboard = false;
 };

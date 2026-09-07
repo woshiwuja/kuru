@@ -5,6 +5,7 @@
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
+#include <memory>
 
 Core::Core() {
   assert(s_instance == nullptr && "only one Core may exist at a time");
@@ -14,6 +15,7 @@ Core::Core() {
   device = std::make_unique<Device>();
   graphics = std::make_unique<Graphics>();
   sync = std::make_unique<Sync>();
+  physicsManager = std::make_unique<PhysicsManager>();
 }
 
 Core::~Core() {
@@ -28,6 +30,7 @@ Core *Core::get() {
 
 void Core::init() {
   initVulkan();
+  initPhysics();
   initECS();
   running = true;
 }
@@ -59,9 +62,9 @@ void Core::initVulkan() {
 void Core::addPlugin(std::unique_ptr<Plugin> plugin) {
   plugins.emplace_back(std::move(plugin));
 }
+void Core::initPhysics() { physicsManager->init(); };
 
 void Core::initECS() {
-  // The frame contract is the engine's, not any one plugin's.
   reg.ctx().emplace<FrameContext>();
   for (auto &plugin : plugins) {
     plugin->init(reg);
@@ -89,15 +92,17 @@ void Core::cleanup() {
   graphics = nullptr;
   device = nullptr;
   instance = nullptr;
+  physicsManager->stop();
+  physicsManager = nullptr;
 }
 
 void Core::createInstance() {
-  vk::ApplicationInfo applicationInfo{
-      .pApplicationName = window->title.c_str(),
-      .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-      .pEngineName = "Kuru",
-      .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-      .apiVersion = VK_API_VERSION_1_3};
+  vk::ApplicationInfo applicationInfo{.pApplicationName = window->title.c_str(),
+                                      .applicationVersion =
+                                          VK_MAKE_VERSION(1, 0, 0),
+                                      .pEngineName = "Kuru",
+                                      .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+                                      .apiVersion = VK_API_VERSION_1_3};
 
   auto extensions = getRequiredInstanceExtensions();
   std::vector<const char *> layers;

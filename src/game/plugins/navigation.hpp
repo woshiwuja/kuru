@@ -1,3 +1,4 @@
+#pragma once
 #include <Recast.h>
 #include <vector>
 #include "../../lib/plugin/plugin.hpp"

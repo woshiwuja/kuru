@@ -5,29 +5,40 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Vulkan SDK unpacked in the project root; FindVulkan picks it up via VULKAN_SDK.
-file(GLOB _sdk "${CMAKE_SOURCE_DIR}/vulkansdk-linux-x86_64-*/*/x86_64")
-if(_sdk AND NOT DEFINED ENV{VULKAN_SDK})
-  list(GET _sdk 0 _sdk)
-  set(ENV{VULKAN_SDK} "${_sdk}")
-  # loader ships under lib/VulkanLoader/lib, not where FindVulkan looks
-  list(APPEND CMAKE_PREFIX_PATH "${_sdk}/lib/VulkanLoader")
+# Everything that differs between the Windows and Linux builds lives here. Dependency
+# options are only read at FetchContent_MakeAvailable, so they can all be set up front.
+if(WIN32)
+  # Jolt defaults to the static MSVC CRT (/MT), which mismatches everything else here (/MD) at link time
+  set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+  if(MSVC)
+    # rc.exe (used for SDL3's version.rc) has no toolchain auto-detection like clang-cl does;
+    # it only finds SDK headers (winresrc.h) via explicit -I, so point it at the SDK CMAKE_RC_COMPILER resolved.
+    get_filename_component(_rc_ver_dir "${CMAKE_RC_COMPILER}" DIRECTORY) # .../bin/<ver>/x64
+    get_filename_component(_rc_ver_dir "${_rc_ver_dir}" DIRECTORY)       # .../bin/<ver>
+    get_filename_component(_sdk_ver "${_rc_ver_dir}" NAME)
+    get_filename_component(_sdk_root "${_rc_ver_dir}" DIRECTORY)         # .../bin
+    get_filename_component(_sdk_root "${_sdk_root}" DIRECTORY)           # .../Windows Kits/10
+    set(_sdk_include "${_sdk_root}/Include/${_sdk_ver}")
+    if(EXISTS "${_sdk_include}/um/winresrc.h")
+      string(APPEND CMAKE_RC_FLAGS " /I \"${_sdk_include}/um\" /I \"${_sdk_include}/shared\" /I \"${_sdk_include}/ucrt\"")
+    endif()
+  endif()
+else()
+  # Vulkan SDK unpacked in the project root; FindVulkan picks it up via VULKAN_SDK.
+  # (On Windows the installer sets VULKAN_SDK itself, so there is nothing to find.)
+  file(GLOB _sdk "${CMAKE_SOURCE_DIR}/vulkansdk-linux-x86_64-*/*/x86_64")
+  if(_sdk AND NOT DEFINED ENV{VULKAN_SDK})
+    list(GET _sdk 0 _sdk)
+    set(ENV{VULKAN_SDK} "${_sdk}")
+    # loader ships under lib/VulkanLoader/lib, not where FindVulkan looks
+    list(APPEND CMAKE_PREFIX_PATH "${_sdk}/lib/VulkanLoader")
+  endif()
+  set(GLFW_BUILD_WAYLAND OFF) # ponytail: X11 only; flip on when wayland dev pkgs are around
+  # ponytail: optional X11 extras whose -dev packages aren't installed here
+  set(SDL_X11_XSCRNSAVER OFF)
+  set(SDL_X11_XTEST OFF)
 endif()
 find_package(Vulkan REQUIRED)
-
-if(MSVC)
-  # rc.exe (used for SDL3's version.rc) has no toolchain auto-detection like clang-cl does;
-  # it only finds SDK headers (winresrc.h) via explicit -I, so point it at the SDK CMAKE_RC_COMPILER resolved.
-  get_filename_component(_rc_ver_dir "${CMAKE_RC_COMPILER}" DIRECTORY) # .../bin/<ver>/x64
-  get_filename_component(_rc_ver_dir "${_rc_ver_dir}" DIRECTORY)       # .../bin/<ver>
-  get_filename_component(_sdk_ver "${_rc_ver_dir}" NAME)
-  get_filename_component(_sdk_root "${_rc_ver_dir}" DIRECTORY)         # .../bin
-  get_filename_component(_sdk_root "${_sdk_root}" DIRECTORY)           # .../Windows Kits/10
-  set(_sdk_include "${_sdk_root}/Include/${_sdk_ver}")
-  if(EXISTS "${_sdk_include}/um/winresrc.h")
-    string(APPEND CMAKE_RC_FLAGS " /I \"${_sdk_include}/um\" /I \"${_sdk_include}/shared\" /I \"${_sdk_include}/ucrt\"")
-  endif()
-endif()
 
 include(FetchContent)
 FetchContent_Declare(glm
@@ -37,7 +48,6 @@ FetchContent_Declare(glm
 set(GLFW_BUILD_DOCS OFF)
 set(GLFW_BUILD_TESTS OFF)
 set(GLFW_BUILD_EXAMPLES OFF)
-set(GLFW_BUILD_WAYLAND OFF) # ponytail: X11 only; flip on when wayland dev pkgs are around
 FetchContent_Declare(glfw
   GIT_REPOSITORY https://github.com/glfw/glfw.git
   GIT_TAG 3.4
@@ -67,9 +77,6 @@ FetchContent_Declare(ktx
   GIT_TAG v4.4.2
   GIT_SHALLOW TRUE)
 set(SDL_TEST_LIBRARY OFF)
-# ponytail: optional X11 extras whose -dev packages aren't installed here
-set(SDL_X11_XSCRNSAVER OFF)
-set(SDL_X11_XTEST OFF)
 set(SDL_EXAMPLES OFF)
 FetchContent_Declare(sdl3
   GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
@@ -81,8 +88,9 @@ FetchContent_Declare(imgui
   GIT_TAG v1.92.9b-docking
   GIT_SHALLOW TRUE
   SOURCE_SUBDIR no-configure)
-# Jolt defaults to the static MSVC CRT (/MT), which mismatches everything else here (/MD) at link time
-set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+# Jolt's Vulkan backend adds Vulkan_INCLUDE_DIRS as a PUBLIC include dir, which CMake
+# rejects because the SDK sits inside our source tree. ponytail: we don't use Jolt on the GPU
+set(JPH_USE_VK OFF)
 # Jolt's CMakeLists lives in Build/, not the repo root
 FetchContent_Declare(jolt
   GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
@@ -109,6 +117,7 @@ set(IMGUI_SRC
   ${imgui_SOURCE_DIR}/imgui_tables.cpp
   ${imgui_SOURCE_DIR}/imgui_widgets.cpp
   ${imgui_SOURCE_DIR}/imgui_demo.cpp # ui.cpp calls ImGui::ShowDemoWindow
+  ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp # InputText on std::string
   ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
   ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
 add_executable(Kuru src/main.cpp ${KURU_SRC} ${IMGUI_SRC})
@@ -120,31 +129,28 @@ target_include_directories(Kuru PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR}
   ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 # main.cpp initialises vk structs with designated initialisers
 # main.cpp expects the tinygltf impl macro on the command line (see its include block)
+# camera.cpp's reversed-Z projection needs glm to emit Vulkan's [0,1] depth range
 target_compile_definitions(Kuru PRIVATE VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
-  TINYGLTF_IMPLEMENTATION STB_IMAGE_IMPLEMENTATION)
+  TINYGLTF_IMPLEMENTATION STB_IMAGE_IMPLEMENTATION GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # main.cpp opens textures/ and models/ cwd-relative too. ponytail: configure-time copy, static assets
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/textures ${CMAKE_CURRENT_SOURCE_DIR}/models
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures ${CMAKE_CURRENT_SOURCE_DIR}/assets/models
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
-# main.cpp opens shaders/slang.spv relative to the cwd, so emit it next to the binary.
+# render.cpp opens shaders/*.spv relative to the cwd, so emit them next to the binary.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders) # slangc won't create it
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/slang.spv
-  COMMAND $ENV{VULKAN_SDK}/bin/slangc ${CMAKE_CURRENT_SOURCE_DIR}/shaders/slang.slang
-          -target spirv -emit-spirv-directly -fvk-use-entrypoint-name
-          -o ${CMAKE_CURRENT_BINARY_DIR}/shaders/slang.spv
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/slang.slang
-  VERBATIM)
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/sky_clouds.spv
-  COMMAND $ENV{VULKAN_SDK}/bin/slangc ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_clouds.slang
-          -target spirv -emit-spirv-directly -fvk-use-entrypoint-name
-          -o ${CMAKE_CURRENT_BINARY_DIR}/shaders/sky_clouds.spv
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky_clouds.slang
-  VERBATIM)
-add_custom_target(shaders DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/shaders/slang.spv
-                                  ${CMAKE_CURRENT_BINARY_DIR}/shaders/sky_clouds.spv)
+foreach(_shader slang sky_clouds)
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/${_shader}.spv
+    COMMAND $ENV{VULKAN_SDK}/bin/slangc${CMAKE_EXECUTABLE_SUFFIX}
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/${_shader}.slang
+            -target spirv -emit-spirv-directly -fvk-use-entrypoint-name
+            -o ${CMAKE_CURRENT_BINARY_DIR}/shaders/${_shader}.spv
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/${_shader}.slang
+    VERBATIM)
+  list(APPEND _spv ${CMAKE_CURRENT_BINARY_DIR}/shaders/${_shader}.spv)
+endforeach()
+add_custom_target(shaders DEPENDS ${_spv})
 add_dependencies(Kuru shaders)
 
 # editor tooling (clangd, zed) looks for compile_commands.json at the repo root

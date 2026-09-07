@@ -157,7 +157,7 @@ void UiPlugin::update(entt::registry &reg) {
               ("entity " + std::to_string(entt::to_integral(entity)))
                   .c_str())) {
         ImGui::DragFloat3("position", &transform.position.x, 5.0f);
-        ImGui::DragFloat3("rotation", &transform.rotation.x, .1f);
+        dragRotation("rotation", transform.rotation);
         ImGui::DragFloat3("scale", &transform.scale.x, 0.01f, 0.001f, 1000.0f);
         if (ImGui::Button("center at origin")) {
           transform.position = {0.0f, 0.0f, 0.0f};

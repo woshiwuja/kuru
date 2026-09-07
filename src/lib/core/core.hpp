@@ -10,6 +10,7 @@
 #include <memory>
 #include <vulkan/vulkan_profiles.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include "../physics/physics.hpp"
 
 struct AppInfo {
   bool profileSupported = false;
@@ -27,6 +28,7 @@ struct Core {
   bool running = false;
   std::unique_ptr<Window> window = nullptr;
   std::unique_ptr<EventManager> eventManager = nullptr;
+  std::unique_ptr<PhysicsManager> physicsManager = nullptr;
   AppInfo appInfo = {};
   vk::raii::Context context;
   vk::raii::Instance instance = nullptr;
@@ -60,6 +62,7 @@ struct Core {
 
   void initVulkan();
   void initECS();
+  void initPhysics();
   void mainLoop();
   void cleanup();
   void createInstance();
