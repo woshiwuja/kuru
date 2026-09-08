@@ -33,8 +33,6 @@ struct PhysicsManager {
   JPH::BodyInterface &bodies() { return system.GetBodyInterface(); }
 
   void init() {
-    // RegisterDefaultAllocator() sta in Core::initPhysics(): deve girare
-    // prima che questo oggetto sia costruito, non qui dentro.
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
 

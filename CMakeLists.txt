@@ -124,6 +124,11 @@ add_executable(Kuru src/main.cpp ${KURU_SRC} ${IMGUI_SRC})
 target_link_libraries(Kuru PRIVATE Vulkan::Vulkan glfw SDL3::SDL3 glm::glm EnTT::EnTT ktx
   Jolt::Jolt RecastNavigation::Recast RecastNavigation::Detour
   RecastNavigation::DetourCrowd RecastNavigation::DetourTileCache RecastNavigation::DebugUtils)
+if(MSVC)
+  # clang-cl/cl.exe default to exceptions off; Kuru's error paths (and tinygltf/nlohmann json) use throw/try.
+  # PRIVATE: Jolt's own CMakeLists disables exceptions for itself and must not see this.
+  target_compile_options(Kuru PRIVATE /EHsc)
+endif()
 # stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
 target_include_directories(Kuru PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR}
   ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)

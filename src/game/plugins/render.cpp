@@ -475,18 +475,12 @@ void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
 }
 
 void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
-  // Unloading is an asset swap, not a per-frame op, so a full idle is the cheap
-  // correct way to know the GPU is done with these buffers.
-  // ponytail: device idle per despawn; per-frame trash buckets if it ever
-  // hitches
   Core::get()->device->wait();
   reg.destroy(entity);
 }
 
 void RenderPlugin::updateUniforms(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
-
-  // ponytail: first light only, same as CameraPlugin's one-camera assumption.
   glm::vec4 sunDirection = {0.0f, 1.0f, 0.0f, 0.0f};
   glm::vec4 sunColor = {1.0f, 1.0f, 1.0f, 0.0f};
   auto lightView = reg.view<DirectionalLight>();

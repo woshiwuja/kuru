@@ -1,7 +1,10 @@
 #include "model.hpp"
 #include "../common/common.hpp"
 #include "../core/core.hpp"
+#include <cmath>
+#include <glm/gtc/constants.hpp>
 #include <iostream>
+#include <limits>
 // tiny_gltf.h is the only place stb_image.h comes from, and its implementation
 // block sits outside the include guard: keep it to this one TU.
 // We only ever read glTF, so drop the writer rather than link stb_image_write.
@@ -223,8 +226,115 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   auto mesh = std::make_shared<Mesh>();
   mesh->minY = minY;
   mesh->maxY = maxY;
+  mesh->vertices = vertices;
+  mesh->indices = indices;
   mesh->upload(vertices, indices);
   mesh->submeshes = std::move(submeshes);
 
+  return mesh;
+}
+
+std::shared_ptr<Mesh> createSphere(float radius, uint32_t rings,
+                                   uint32_t sectors) {
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+
+  // Rows of latitude from the north pole (v=0) to the south pole (v=1),
+  // each with one full ring of longitude - shared poles would need split
+  // UVs anyway, so this just leaves a degenerate ring at each end instead.
+  const uint32_t columns = sectors + 1;
+  for (uint32_t r = 0; r <= rings; r++) {
+    const float v = static_cast<float>(r) / static_cast<float>(rings);
+    const float phi = v * glm::pi<float>();
+    const float y = std::cos(phi);
+    const float ringRadius = std::sin(phi);
+
+    for (uint32_t s = 0; s <= sectors; s++) {
+      const float u = static_cast<float>(s) / static_cast<float>(sectors);
+      const float theta = u * glm::two_pi<float>();
+      const glm::vec3 normal(ringRadius * std::cos(theta), y,
+                             ringRadius * std::sin(theta));
+
+      Vertex vertex{};
+      vertex.pos = normal * radius;
+      vertex.normal = normal;
+      vertex.texCoord = {u, v};
+      vertex.color = {1.0f, 1.0f, 1.0f};
+      vertices.push_back(vertex);
+    }
+  }
+
+  for (uint32_t r = 0; r < rings; r++) {
+    for (uint32_t s = 0; s < sectors; s++) {
+      const uint32_t i0 = r * columns + s;
+      const uint32_t i1 = i0 + columns;
+      indices.push_back(i0);
+      indices.push_back(i1);
+      indices.push_back(i0 + 1);
+      indices.push_back(i0 + 1);
+      indices.push_back(i1);
+      indices.push_back(i1 + 1);
+    }
+  }
+
+  auto mesh = std::make_shared<Mesh>();
+  mesh->minY = -radius;
+  mesh->maxY = radius;
+  mesh->vertices = vertices;
+  mesh->indices = indices;
+  mesh->upload(vertices, indices);
+  return mesh;
+}
+
+std::shared_ptr<Mesh> createCube(float halfExtent) {
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+
+  // Each face gets its own 4 vertices instead of sharing the cube's 8 corners,
+  // so every face keeps a flat normal and its own 0..1 UVs instead of the
+  // averaged/smeared ones shared corners would produce.
+  struct Face {
+    glm::vec3 normal, right, up;
+  };
+  const Face faces[6] = {
+      {{0, 0, 1}, {1, 0, 0}, {0, 1, 0}},   // +Z
+      {{0, 0, -1}, {-1, 0, 0}, {0, 1, 0}}, // -Z
+      {{1, 0, 0}, {0, 0, -1}, {0, 1, 0}},  // +X
+      {{-1, 0, 0}, {0, 0, 1}, {0, 1, 0}},  // -X
+      {{0, 1, 0}, {1, 0, 0}, {0, 0, -1}},  // +Y
+      {{0, -1, 0}, {1, 0, 0}, {0, 0, 1}},  // -Y
+  };
+  const glm::vec2 uvs[4] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+
+  for (const Face &face : faces) {
+    const uint32_t base = static_cast<uint32_t>(vertices.size());
+    const glm::vec3 center = face.normal * halfExtent;
+    const glm::vec3 corners[4] = {
+        center - face.right * halfExtent - face.up * halfExtent,
+        center + face.right * halfExtent - face.up * halfExtent,
+        center + face.right * halfExtent + face.up * halfExtent,
+        center - face.right * halfExtent + face.up * halfExtent,
+    };
+    for (int i = 0; i < 4; i++) {
+      Vertex vertex{};
+      vertex.pos = corners[i];
+      vertex.normal = face.normal;
+      vertex.texCoord = uvs[i];
+      vertex.color = {1.0f, 1.0f, 1.0f};
+      vertices.push_back(vertex);
+    }
+    // right x up == normal for every face above, so this winding is CCW as
+    // seen from outside on all six - matching the pipeline's front face.
+    for (uint32_t i : {0u, 1u, 2u, 2u, 3u, 0u}) {
+      indices.push_back(base + i);
+    }
+  }
+
+  auto mesh = std::make_shared<Mesh>();
+  mesh->minY = -halfExtent;
+  mesh->maxY = halfExtent;
+  mesh->vertices = vertices;
+  mesh->indices = indices;
+  mesh->upload(vertices, indices);
   return mesh;
 }

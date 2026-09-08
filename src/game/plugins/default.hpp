@@ -5,6 +5,7 @@
 #include "Jolt/Physics/Body/BodyCreationSettings.h"
 #include "entt/entity/entity.hpp"
 #include "entt/entity/fwd.hpp"
+#include "character.hpp"
 #include "glm/ext/vector_float3.hpp"
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h" // ImGui::InputText overload for std::string
@@ -14,7 +15,6 @@
 #include <format>
 #include <string>
 
-struct Character {};
 struct Name {
   std::string text;
 };
@@ -22,41 +22,36 @@ struct DefaultPlugin : public Plugin {
   void init(entt::registry &reg) override {
     entt::entity e = reg.create();
     reg.emplace<Character>(e);
-    reg.emplace<Name>(e).text =
-        std::format("Insectman {}", entt::to_integral(e));
+    reg.emplace<FirstName>(e, "coglione");
+    reg.emplace<LastName>(e, "culone");
     auto &t = reg.emplace<Transform>(e);
-    t.position = glm::vec3{0, 0, 0};
+    t.position = glm::vec3{0, 4000, 0};
     t.rotation = glm::quat(glm::vec3{0.7, 0.7, 0}); // da euler radianti
     t.scale = glm::vec3{1, 1, 1};
-    // _r vive in JPH::literals, opt-in apposta (Jolt/Math/Real.h:37)
     using namespace JPH::literals;
-    // Il componente È la richiesta di spawn: PhysicsPlugin lo trasforma in un
-    // corpo e poi lo cancella. Da locale non sarebbe mai arrivato a Jolt.
-    reg.emplace<JPH::BodyCreationSettings>(
-        e, new JPH::SphereShape(0.5f), JPH::RVec3(0.0_r, 2.0_r, 0.0_r),
+    auto &bodySettings = reg.emplace<JPH::BodyCreationSettings>(
+        e, new JPH::SphereShape(1.0f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
         JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, kr::MOVING);
-    // spawn(reg, e, "models/insectman.glb", "");
+    // Spawns 1500+ units above the terrain and free-falls into it; by impact
+    // it's moving fast enough that discrete collision can miss the heightfield
+    // between steps (tunnels through). LinearCast sweeps the shape instead.
+    bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
+    spawn(reg, e, "primitive:sphere", "textures/viking_room.ktx2");
 
     entt::entity mapEnt = reg.create();
     reg.emplace<Character>(mapEnt);
-    reg.emplace<Name>(mapEnt).text =
-        std::format("Testmap {}", entt::to_integral(e));
     auto &mapT = reg.emplace<Transform>(mapEnt);
-    mapT.position = glm::vec3{0, 0, 0};
+    mapT.position = glm::vec3{0, 2000, 0};
     mapT.rotation = glm::vec3{0.0, 0.0, 0.0};
     mapT.scale = glm::vec3{1, 1, 1};
     //spawn(reg, mapEnt, "models/sanctuary.glb", "");
   };
   void update(entt::registry &reg) override {
     using namespace ImGui;
-    // Per-entity "is the details window open" flag, keyed by ImGui ID instead
-    // of living on a component: PushID(entity) scopes GetID("inspector open")
-    // to that entity, and GetStateStorage() is ImGui's own persistent-by-ID
-    // storage, so the flag survives across frames without us owning it.
     ImGuiStorage *state = GetStateStorage();
     Begin("Characters");
-    for (auto [e, name] : reg.view<Name>().each()) {
-      Text("%s", name.text.c_str());
+    for (auto [e, first_name, last_name] : reg.view<Character, FirstName, LastName>().each()) {
+      Text("%s %s", first_name.c_str(), last_name.c_str());
       PushID(static_cast<int>(entt::to_integral(e)));
       auto openId = GetID("inspector open");
       bool open = state->GetBool(openId, false);
@@ -64,11 +59,11 @@ struct DefaultPlugin : public Plugin {
         open = true;
       }
       if (open) {
-        Begin(std::format("{} details###details{}", name.text,
+        Begin(std::format("{} details###details{}", first_name.c_str(),
                           entt::to_integral(e))
                   .c_str(),
               &open);
-        ImGui::InputText("Name", &name.text);
+        ImGui::InputText("Name", &first_name);
         auto t = reg.try_get<Transform>(e);
         if (t != nullptr) {
           DragFloat3("Position", &t->position.x, 5.0f);

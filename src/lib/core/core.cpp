@@ -10,6 +10,9 @@
 Core::Core() {
   assert(s_instance == nullptr && "only one Core may exist at a time");
   s_instance = this;
+  // Jolt's allocation hooks are null until this runs; physicsManager below
+  // constructs a TempAllocatorImpl that allocates immediately.
+  JPH::RegisterDefaultAllocator();
   window = std::make_unique<Window>(Window{.width = 800, .height = 600});
   eventManager = std::make_unique<EventManager>();
   device = std::make_unique<Device>();
