@@ -1,6 +1,8 @@
 #include "camera.hpp"
 #include "../../lib/core/core.hpp"
+#include "entt/entity/fwd.hpp"
 #include <glm/gtc/matrix_transform.hpp>
+#include <imgui.h>
 
 namespace {
 constexpr glm::vec3 WORLD_UP = {0.0f, 1.0f, 0.0f};
@@ -84,4 +86,43 @@ void CameraPlugin::update(entt::registry &reg) {
                                    0, 0, -1, 0,
                                    0, 0, 1, 1);
   frame.proj = REVERSE_Z * frame.proj;
+  UI(reg);
+}
+
+void CameraPlugin::UI(entt::registry &reg){
+    using namespace ImGui;
+    if (Begin("Cameras")) {
+      for (auto [entity, camera] : reg.view<Camera>().each()) {
+        DragFloat3("pivot", &camera.pivot.x, 0.05f);
+        DragFloat("ground height", &camera.groundHeight, 0.05f);
+        DragFloat("yaw", &camera.yaw, 0.5f);
+        SliderFloat("pitch", &camera.pitch, -89.0f, 89.0f);
+        SliderFloat("distance", &camera.distance, camera.minDistance,
+                           camera.maxDistance);
+        if (Button("back away")) {
+          // Blind-safe escape for when the camera ends up inside the mesh:
+          // snap to the origin at max range rather than fumbling sliders with
+          // nothing visible to judge them by.
+          camera.pivot = {0.0f, 0.0f, 0.0f};
+          camera.distance = camera.maxDistance;
+        }
+        SeparatorText("range");
+        DragFloat("min distance", &camera.minDistance, 0.1f, 0.01f,
+                         camera.maxDistance);
+        DragFloat("max distance", &camera.maxDistance, 1.0f,
+                         camera.minDistance, 1e6f);
+        DragFloat("near plane", &camera.nearPlane, 0.01f, 0.001f,
+                         camera.farPlane);
+        DragFloat("far plane", &camera.farPlane, 1.0f, camera.nearPlane,
+                         1e6f);
+        SeparatorText("feel");
+        DragFloat("pan speed", &camera.panSpeed, 0.1f, 0.0f, 100.0f);
+        DragFloat("turn speed", &camera.turnSpeed, 1.0f, 0.0f, 720.0f);
+        DragFloat("orbit sensitivity", &camera.orbitSensitivity, 0.01f,
+                         0.0f, 5.0f);
+        DragFloat("zoom speed", &camera.zoomSpeed, 0.01f, 0.0f, 1.0f);
+        SliderFloat("fov", &camera.fov, 10.0f, 120.0f);
+      }
+    }
+   End();
 }

@@ -9,7 +9,7 @@
 // The speeds are feel, not physics: they are meant to be tuned.
 struct Camera {
 	glm::vec3 pivot        = {0.0f, 0.0f, 0.0f};
-	float     groundHeight = 1500.0f;
+	float     groundHeight = 2000.0f;
 
 	float yaw      = -135.0f; // degrees, around +Y
 	float pitch    = -30.0f;  // degrees, negative looks down at the pivot
@@ -17,7 +17,7 @@ struct Camera {
 
 	float minDistance = 0.5f;
 	float maxDistance = 5000.0f;
-	float fov         = 45.0f; // degrees
+	float fov         = 45.0f;
 	float nearPlane   = 0.1f;
 	float farPlane    = 20000.0f;
 
@@ -36,4 +36,5 @@ struct Camera {
 struct CameraPlugin : public Plugin {
 	void init(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
+	void UI(entt::registry &reg);
 };

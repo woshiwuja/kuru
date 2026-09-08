@@ -31,4 +31,23 @@ struct TransformPlugin : public Plugin {
     };
     void update(entt::registry &r) override {
     };
+    void UI(entt::registry &r){
+        if (ImGui::Begin("Transforms")) {
+          for (auto [entity, transform] : r.view<Transform>().each()) {
+            ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
+            if (ImGui::CollapsingHeader(
+                    ("entity " + std::to_string(entt::to_integral(entity)))
+                        .c_str())) {
+              ImGui::DragFloat3("position", &transform.position.x, 5.0f);
+              dragRotation("rotation", transform.rotation);
+              ImGui::DragFloat3("scale", &transform.scale.x, 0.01f, 0.001f, 1000.0f);
+              if (ImGui::Button("center at origin")) {
+                transform.position = {0.0f, 0.0f, 0.0f};
+              }
+            }
+            ImGui::PopID();
+          }
+        }
+        ImGui::End();
+    }
 };
