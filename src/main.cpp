@@ -2,6 +2,7 @@
 #include "game/plugins/lighting.hpp"
 #include "game/plugins/map.hpp"
 #include "game/plugins/mesh_registry.hpp"
+#include "game/plugins/navigation.hpp"
 #include "game/plugins/physics.hpp"
 #include "game/plugins/plugins.hpp"
 #include "game/plugins/render.hpp"
@@ -27,6 +28,7 @@ int main()
 		app.addPlugin(std::make_unique<TransformPlugin>());
 		app.addPlugin(std::make_unique<UiPlugin>());
 		app.addPlugin(std::make_unique<MapPlugin>());
+		app.addPlugin(std::make_unique<NavigationPlugin>());
 		app.init();
 		app.run();
 		app.end();
