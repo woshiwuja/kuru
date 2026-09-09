@@ -12,19 +12,22 @@
 #include <limits>
 #include <vector>
 #include "../../lib/core/core.hpp"
+#include "transform.hpp"
 
 struct Map {};
 struct MapPlugin : public Plugin {
     void init(entt::registry &reg)override{
         auto &p = Core::get()->physicsManager;
+        // Render Transform and the Jolt heightfield have to use the same
+        // factor, or you fall through / stand on invisible ground.
+        constexpr float mapScale = 1000.0f;
         entt::entity mapEntity = reg.create();
 		spawn(reg, mapEntity, "models/testmap.glb",
-		      "textures/viking_room.ktx2");
+		      "textures/viking_room.ktx2", {0.0f, 0.0f, 1.0f, 0.0f},
+		      Transform{.scale = glm::vec3(mapScale)});
 		reg.emplace<Map>(mapEntity);
 		reg.emplace<Sky>(reg.create());
 
-		// Same path spawn() just loaded through - resource_cache returns the
-		// already-loaded Mesh instead of reading the glTF again.
 		entt::resource<Mesh> mesh = getMesh(reg, "models/testmap.glb");
 
 		constexpr uint32_t samples = 128;
@@ -85,8 +88,8 @@ struct MapPlugin : public Plugin {
 
 		JPH::HeightFieldShapeSettings settings(
 		heights.data(),
-		JPH::Vec3(minX, 0.0f, minZ),
-		JPH::Vec3(cellX, 1.0f, cellZ),
+		JPH::Vec3(minX * mapScale, 0.0f, minZ * mapScale),
+		JPH::Vec3(cellX * mapScale, mapScale, cellZ * mapScale),
 		samples
 		);
 		JPH::Shape::ShapeResult result = settings.Create();

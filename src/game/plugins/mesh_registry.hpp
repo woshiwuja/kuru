@@ -8,6 +8,8 @@
 #include "../../lib/model/model.hpp"
 #include "../../lib/plugin/plugin.hpp"
 
+constexpr auto cube = "primitive:cube";
+constexpr auto sphere = "primitive:cube";
 struct MeshLoader {
   using result_type = std::shared_ptr<Mesh>;
 

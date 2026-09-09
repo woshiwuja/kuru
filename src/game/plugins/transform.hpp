@@ -30,6 +30,7 @@ struct TransformPlugin : public Plugin {
         r.ctx().emplace<LocalTransform>();
     };
     void update(entt::registry &r) override {
+        UI(r);
     };
     void UI(entt::registry &r){
         if (ImGui::Begin("Transforms")) {
