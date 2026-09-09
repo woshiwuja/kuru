@@ -13,6 +13,7 @@
 #include <cstring>
 #include <format>
 #include <imgui.h>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -52,12 +53,11 @@ NavGeom flatten(const Mesh &mesh, const glm::mat4 &model) {
   return g;
 }
 
-// unique_ptr con le rcFree*: il build ha nove punti di uscita e liberarle a
-// mano in ognuno e' il modo classico di perdere un heightfield su un errore.
 template <typename T, void (*F)(T *)> struct RcOwn {
   std::unique_ptr<T, decltype(F)> p;
   RcOwn(T *raw) : p(raw, F) {
-    if (!raw) throw std::runtime_error("Recast: allocazione fallita");
+    if (!raw)
+      throw std::runtime_error("Recast: allocazione fallita");
   }
   T *operator->() const { return p.get(); }
   T &operator*() const { return *p; }
@@ -71,8 +71,23 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   rcContext ctx;
 
   rcConfig cfg{};
-  cfg.cs = c.cellSize;
   cfg.ch = c.cellHeight;
+  // rcBuildCompactHeightfield allocates width*height cells up front (plus a
+  // comparably sized spans array) - a cs tuned for a human-scale test level
+  // (RecastDemo's default 0.3) blows past any sane memory budget on a terrain
+  // spanning thousands of units, and fails the allocation instead of just
+  // being slow. Coarsen cs so the grid stays bounded.
+  constexpr int MAX_GRID_DIM = 2000;
+  const float spanX = geom.bmax[0] - geom.bmin[0];
+  const float spanZ = geom.bmax[2] - geom.bmin[2];
+  const float minCellSize = std::max(spanX, spanZ) / MAX_GRID_DIM;
+  cfg.cs = std::max(c.cellSize, minCellSize);
+  if (cfg.cs > c.cellSize) {
+    std::cout << "navmesh: cellSize " << c.cellSize
+              << " would need a grid over " << MAX_GRID_DIM
+              << " cells wide for this terrain; using " << cfg.cs
+              << " instead\n";
+  }
   cfg.walkableSlopeAngle = c.agentMaxSlope;
   // ceil per l'altezza (un agente alto 2.0 non passa in 1.9), floor per il
   // gradino (non promettere una salita che non c'e'), come nel sample.
@@ -92,8 +107,11 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
 
   if (cfg.maxVertsPerPoly > DT_VERTS_PER_POLYGON) {
-    throw std::runtime_error("NavConfig::vertsPerPoly oltre DT_VERTS_PER_POLYGON");
+    throw std::runtime_error(
+        "NavConfig::vertsPerPoly oltre DT_VERTS_PER_POLYGON");
   }
+  std::cout << "navmesh: voxel grid " << cfg.width << "x" << cfg.height
+            << " (cs=" << cfg.cs << " ch=" << cfg.ch << ")\n";
 
   progress = 1;
   // 1. voxelizzazione
@@ -153,17 +171,22 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   if (!rcBuildPolyMesh(&ctx, *cset, cfg.maxVertsPerPoly, *pmesh)) {
     throw std::runtime_error("rcBuildPolyMesh fallita");
   }
+  std::cout << "navmesh: poly mesh " << pmesh->nverts << " verts, "
+            << pmesh->npolys << " polys\n";
   RcOwn<rcPolyMeshDetail, rcFreePolyMeshDetail> dmesh(rcAllocPolyMeshDetail());
   if (!rcBuildPolyMeshDetail(&ctx, *pmesh, *chf, cfg.detailSampleDist,
                              cfg.detailSampleMaxError, *dmesh)) {
     throw std::runtime_error("rcBuildPolyMeshDetail fallita");
   }
+  std::cout << "navmesh: detail mesh " << dmesh->nverts << " verts, "
+            << dmesh->ntris << " tris\n";
 
   progress = 6;
   // 6. da Recast a Detour. Senza questi flag il filtro di query scarta tutto e
   // ogni findNearestPoly torna 0.
   for (int i = 0; i < pmesh->npolys; ++i) {
-    if (pmesh->areas[i] == RC_WALKABLE_AREA) pmesh->flags[i] = NAV_POLY_WALK;
+    if (pmesh->areas[i] == RC_WALKABLE_AREA)
+      pmesh->flags[i] = NAV_POLY_WALK;
   }
 
   dtNavMeshCreateParams params{};
@@ -200,6 +223,7 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
                              std::to_string(pmesh->nverts) + " verts, " +
                              std::to_string(pmesh->npolys) + " polys");
   }
+  std::cout << "navmesh: detour data " << navDataSize << " bytes\n";
 
   nav.mesh = dtAllocNavMesh();
   if (!nav.mesh) {
@@ -222,8 +246,10 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
     throw std::runtime_error("dtCrowd::init fallita");
   }
   nav.crowd->getEditableFilter(0)->setIncludeFlags(NAV_POLY_WALK);
-  progress = NAV_BUILD_STEPS;
-  return pmesh->npolys;
+
+  const auto elapsed = std::chrono::duration<float, std::milli>(
+      std::chrono::high_resolution_clock::now() - start);
+  std::cout << "navmesh: build done in " << elapsed.count() << "ms\n";
 }
 
 } // namespace
@@ -250,6 +276,7 @@ void NavigationPlugin::start(entt::registry &reg) {
       clearDebug(reg);
     }
   }
+  std::cout << "navmesh: no Map entity with a MeshRef found, skipping build\n";
 }
 
 void NavigationPlugin::rebuild(entt::registry &reg) {
@@ -428,14 +455,15 @@ void NavigationPlugin::update(entt::registry &reg) {
   UI(reg); // prima dell'uscita anticipata: il pannello serve soprattutto
            // quando la navmesh non c'e'.
   auto *nav = reg.ctx().find<NavMap>();
-  if (nav == nullptr || nav->crowd == nullptr) return; // nessuna mappa caricata
+  if (nav == nullptr || nav->crowd == nullptr)
+    return;
 
   const float *extents = nav->crowd->getQueryExtents();
   const dtQueryFilter *filter = nav->crowd->getFilter(0);
 
-  // Agenti non ancora inseriti: li aggiunge dalla posizione del Transform.
   for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
-    if (agent.idx >= 0) continue;
+    if (agent.idx >= 0)
+      continue;
     dtCrowdAgentParams ap{};
     ap.radius = config.agentRadius;
     ap.height = config.agentHeight;
@@ -450,14 +478,11 @@ void NavigationPlugin::update(entt::registry &reg) {
     agent.idx = nav->crowd->addAgent(&t.position.x, &ap);
   }
 
-  // Destinazioni: una richiesta, consumata. Ripeterla ogni frame farebbe
-  // ricalcolare il path da zero e l'agente non partirebbe mai.
   for (auto [e, agent, dest] : reg.view<NavAgent, NavDest>().each()) {
-    if (agent.idx < 0) continue;
+    if (agent.idx < 0)
+      continue;
     dtPolyRef ref = 0;
     float nearest[3] = {0, 0, 0};
-    // La destinazione va agganciata a un poly: un punto in aria o fuori dal
-    // navmesh non e' un target valido per il crowd.
     if (dtStatusFailed(nav->query->findNearestPoly(&dest.pos.x, extents, filter,
                                                    &ref, nearest)) ||
         ref == 0) {
@@ -471,9 +496,11 @@ void NavigationPlugin::update(entt::registry &reg) {
 
   // Il crowd possiede la posizione degli agenti, quindi sovrascrive Transform.
   for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
-    if (agent.idx < 0) continue;
+    if (agent.idx < 0)
+      continue;
     const dtCrowdAgent *a = nav->crowd->getAgent(agent.idx);
-    if (a == nullptr || !a->active) continue;
+    if (a == nullptr || !a->active)
+      continue;
     t.position = {a->npos[0], a->npos[1], a->npos[2]};
   }
 }

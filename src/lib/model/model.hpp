@@ -40,3 +40,10 @@ struct Mesh {
 
 std::shared_ptr<Mesh> loadModel(const std::string &path);
 } // namespace KR
+
+// Procedural UV sphere - no glTF file needed, for debug visuals/placeholders.
+std::shared_ptr<Mesh> createSphere(float radius = 0.5f, uint32_t rings = 16,
+                                   uint32_t sectors = 32);
+
+// Procedural cube (unshared normals/UVs per face, so edges shade correctly).
+std::shared_ptr<Mesh> createCube(float halfExtent = 0.5f);
