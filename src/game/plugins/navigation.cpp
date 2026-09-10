@@ -6,6 +6,7 @@
 #include "render.hpp"
 #include "transform.hpp"
 
+#include <DetourAlloc.h>
 #include <DetourNavMeshBuilder.h>
 #include <Recast.h>
 #include <chrono>
@@ -252,6 +253,100 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   std::cout << "navmesh: build done in " << elapsed.count() << "ms\n";
 }
 
+// "models/testmap.glb" -> "models/testmap.bin" - next to the source model,
+// same folder, so it survives alongside whichever map is currently spawned.
+std::string navmeshCachePath(const std::string &modelPath) {
+  const size_t dot = modelPath.find_last_of('.');
+  const std::string stem =
+      dot == std::string::npos ? modelPath : modelPath.substr(0, dot);
+  return stem + ".bin";
+}
+
+// Rebuilding from the header on: bumping this forces stale caches (from an
+// older Recast/Detour or a changed NavConfig) to rebuild instead of loading
+// mismatched data.
+constexpr uint32_t NAVMESH_CACHE_MAGIC = 0x4B564E4B;   // "KNVK"
+constexpr uint32_t NAVMESH_CACHE_VERSION = 1;
+struct NavMeshCacheHeader {
+  uint32_t magic;
+  uint32_t version;
+  int32_t dataSize;
+};
+
+// The navmesh here is a single non-tiled mesh, so the whole thing is exactly
+// the one blob dtCreateNavMeshData produced - getTile(0) hands that same
+// blob back, nothing else to serialize.
+void saveNavMesh(const dtNavMesh &mesh, const std::string &path) {
+  const dtMeshTile *tile = mesh.getTile(0);
+  if (tile == nullptr || tile->data == nullptr) return;
+
+  std::ofstream file(path, std::ios::binary | std::ios::trunc);
+  if (!file) {
+    std::cout << "navmesh: could not open " << path << " for writing\n";
+    return;
+  }
+  NavMeshCacheHeader header{NAVMESH_CACHE_MAGIC, NAVMESH_CACHE_VERSION,
+                            tile->dataSize};
+  file.write(reinterpret_cast<const char *>(&header), sizeof(header));
+  file.write(reinterpret_cast<const char *>(tile->data), tile->dataSize);
+  std::cout << "navmesh: saved " << tile->dataSize << " bytes to " << path
+            << "\n";
+}
+
+// Builds into a scratch NavMap and only swaps it into `nav` (via move-assign)
+// once every step succeeds - a bad/stale/truncated cache file falls through
+// to the caller's normal build() path instead of leaving `nav` half-set-up.
+bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file) return false; // no cache yet, not an error
+
+  NavMeshCacheHeader header{};
+  file.read(reinterpret_cast<char *>(&header), sizeof(header));
+  if (!file || header.magic != NAVMESH_CACHE_MAGIC ||
+      header.version != NAVMESH_CACHE_VERSION || header.dataSize <= 0) {
+    std::cout << "navmesh: " << path
+              << " is missing/incompatible, rebuilding\n";
+    return false;
+  }
+
+  auto *navData =
+      static_cast<unsigned char *>(dtAlloc(header.dataSize, DT_ALLOC_PERM));
+  if (navData == nullptr) return false;
+  file.read(reinterpret_cast<char *>(navData), header.dataSize);
+  if (!file) {
+    dtFree(navData);
+    std::cout << "navmesh: " << path << " is truncated, rebuilding\n";
+    return false;
+  }
+
+  NavMap loaded;
+  loaded.mesh = dtAllocNavMesh();
+  // DT_TILE_FREE_DATA: on success navData belongs to the navmesh now; on
+  // failure init() never took it, so it's still ours to free.
+  if (loaded.mesh == nullptr ||
+      dtStatusFailed(loaded.mesh->init(navData, header.dataSize,
+                                       DT_TILE_FREE_DATA))) {
+    dtFree(navData);
+    return false;
+  }
+  loaded.query = dtAllocNavMeshQuery();
+  if (loaded.query == nullptr ||
+      dtStatusFailed(loaded.query->init(loaded.mesh, 2048))) {
+    return false; // ~NavMap() cleans up loaded.mesh
+  }
+  loaded.crowd = dtAllocCrowd();
+  if (loaded.crowd == nullptr ||
+      !loaded.crowd->init(MAX_AGENTS, c.agentRadius, loaded.mesh)) {
+    return false;
+  }
+  loaded.crowd->getEditableFilter(0)->setIncludeFlags(NAV_POLY_WALK);
+
+  nav = std::move(loaded);
+  std::cout << "navmesh: loaded from " << path << " (" << header.dataSize
+            << " bytes)\n";
+  return true;
+}
+
 } // namespace
 
 void NavigationPlugin::init(entt::registry &reg) {
@@ -494,13 +589,11 @@ void NavigationPlugin::update(entt::registry &reg) {
 
   nav->crowd->update(Core::get()->deltaTime, nullptr);
 
-  // Il crowd possiede la posizione degli agenti, quindi sovrascrive Transform.
   for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
     if (agent.idx < 0)
       continue;
     const dtCrowdAgent *a = nav->crowd->getAgent(agent.idx);
     if (a == nullptr || !a->active)
       continue;
-    t.position = {a->npos[0], a->npos[1], a->npos[2]};
   }
 }

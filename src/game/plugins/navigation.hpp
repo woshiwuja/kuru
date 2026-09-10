@@ -73,6 +73,23 @@ struct NavMap {
     o.query = nullptr;
     o.crowd = nullptr;
   }
+  // Lets loadNavMesh() build into a scratch NavMap and, only once every step
+  // succeeds, swap it into the ctx-owned one - a failure partway through just
+  // destroys the scratch copy instead of leaving the real one half-built.
+  NavMap &operator=(NavMap &&o) noexcept {
+    if (this != &o) {
+      dtFreeCrowd(crowd);
+      dtFreeNavMeshQuery(query);
+      dtFreeNavMesh(mesh);
+      mesh = o.mesh;
+      query = o.query;
+      crowd = o.crowd;
+      o.mesh = nullptr;
+      o.query = nullptr;
+      o.crowd = nullptr;
+    }
+    return *this;
+  }
   ~NavMap() {
     dtFreeCrowd(crowd);
     dtFreeNavMeshQuery(query);

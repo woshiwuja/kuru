@@ -22,14 +22,15 @@ struct MapPlugin : public Plugin {
         // Render Transform and the Jolt heightfield have to use the same
         // factor, or you fall through / stand on invisible ground.
         constexpr float mapScale = 1000.0f;
+        const std::string mapPath = "models/testmap.glb";
         entt::entity mapEntity = reg.create();
-		spawn(reg, mapEntity, "models/testmap.glb",
+		spawn(reg, mapEntity, mapPath,
 		      "textures/viking_room.ktx2", {0.0f, 0.0f, 1.0f, 0.0f},
 		      Transform{.scale = glm::vec3(mapScale)});
-		reg.emplace<Map>(mapEntity);
+		reg.emplace<Map>(mapEntity, mapPath);
 		reg.emplace<Sky>(reg.create());
 
-		entt::resource<Mesh> mesh = getMesh(reg, "models/testmap.glb");
+		entt::resource<Mesh> mesh = getMesh(reg, mapPath);
 
 		constexpr uint32_t samples = 128;
 

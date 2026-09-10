@@ -23,7 +23,8 @@ struct Device {
   vk::raii::CommandPool commandPool = nullptr;
   void createCommandPool();
   std::unique_ptr<vk::raii::CommandBuffer> beginSingleTimeCommands();
-  void endSingleTimeCommands(const vk::raii::CommandBuffer &commandBuffer) const;
+  void
+  endSingleTimeCommands(const vk::raii::CommandBuffer &commandBuffer) const;
   void copyBuffer(vk::raii::Buffer &srcBuffer, vk::raii::Buffer &dstBuffer,
                   vk::DeviceSize size);
 };
