@@ -19,76 +19,76 @@ glm::vec3 Camera::front() const {
 glm::vec3 Camera::position() const { return pivot - front() * distance; }
 
 void CameraPlugin::init(entt::registry &reg) {
-  reg.emplace<Camera>(reg.create());
+  reg.emplace<MainCamera>(reg.create());
 }
 
 void CameraPlugin::update(entt::registry &reg) {
   auto &frame = reg.ctx().get<FrameContext>();
-  const auto *core = Core::get();
-  const auto &input = *core->eventManager;
-  const float deltaTime = core->deltaTime;
-
-  auto view = reg.view<Camera>();
+  auto view = reg.view<MainCamera>();
   if (view.begin() == view.end()) {
     return;
   }
-  Camera &camera = view.get<Camera>(*view.begin());
-
-  if (input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse) {
-    camera.yaw += input.mouseDeltaX * camera.orbitSensitivity;
-    camera.pitch -= input.mouseDeltaY * camera.orbitSensitivity;
-  }
-  const bool keyboardFree = !frame.uiCapturesKeyboard;
-  if (keyboardFree && input.down(SDL_SCANCODE_Q)) {
-    camera.yaw -= camera.turnSpeed * deltaTime;
-  }
-  if (keyboardFree && input.down(SDL_SCANCODE_E)) {
-    camera.yaw += camera.turnSpeed * deltaTime;
-  }
-  camera.pitch = std::clamp(camera.pitch, -89.0f, 89.0f);
-
-  if (!frame.uiCapturesMouse) {
-    camera.distance *= 1.0f - input.wheel * camera.zoomSpeed;
-  }
-  camera.distance =
-      std::clamp(camera.distance, camera.minDistance, camera.maxDistance);
-
-  // Pan slides the pivot across the ground plane, and the camera rides along.
-  const glm::vec3 front = camera.front();
-  const glm::vec3 flatFront =
-      glm::normalize(glm::vec3{front.x, 0.0f, front.z});
-  const glm::vec3 flatRight = glm::normalize(glm::cross(flatFront, WORLD_UP));
-
-  const float step = camera.panSpeed * deltaTime;
-  if (keyboardFree && input.down(SDL_SCANCODE_W)) camera.pivot += flatFront * step;
-  if (keyboardFree && input.down(SDL_SCANCODE_S)) camera.pivot -= flatFront * step;
-  if (keyboardFree && input.down(SDL_SCANCODE_D)) camera.pivot += flatRight * step;
-  if (keyboardFree && input.down(SDL_SCANCODE_A)) camera.pivot -= flatRight * step;
-  camera.pivot.y = camera.groundHeight;
-
-  frame.view = glm::lookAt(camera.position(), camera.pivot, WORLD_UP);
-  frame.proj = glm::perspective(
-      glm::radians(camera.fov),
-      static_cast<float>(frame.extent.width) /
-          static_cast<float>(frame.extent.height),
-      camera.nearPlane, camera.farPlane);
-  frame.proj[1][1] *= -1; // glm is GL-handed, Vulkan's Y points the other way
-  // sky_clouds.slang unprojects assuming this (pre-reversal) NDC convention.
-  frame.skyRayProj = frame.proj;
-
-  // Reversed-Z: near maps to depth 1, far to depth 0. A standard depth buffer
-  // spends almost all of its precision within the first few percent of
-  // [nearPlane, farPlane]; this flip (needs GLM_FORCE_DEPTH_ZERO_TO_ONE, set
-  // in CMakeLists.txt) redistributes it evenly in 1/z instead, so far terrain
-  // stops z-fighting long before farPlane needs to come down to hide it.
-  static const glm::mat4 REVERSE_Z(1, 0, 0, 0,
-                                   0, 1, 0, 0,
-                                   0, 0, -1, 0,
-                                   0, 0, 1, 1);
-  frame.proj = REVERSE_Z * frame.proj;
+  Camera &camera = view.get<MainCamera>(*view.begin());
+  camera.control(frame);
   UI(reg);
 }
 
+void Camera::control(FrameContext frame){
+    const auto *core = Core::get();
+    const auto &input = *core->eventManager;
+    const float deltaTime = core->deltaTime;
+    if (input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse) {
+      yaw += input.mouseDeltaX * orbitSensitivity;
+      pitch -= input.mouseDeltaY * orbitSensitivity;
+    }
+    const bool keyboardFree = !frame.uiCapturesKeyboard;
+    if (keyboardFree && input.down(SDL_SCANCODE_Q)) {
+      yaw -= turnSpeed * deltaTime;
+    }
+    if (keyboardFree && input.down(SDL_SCANCODE_E)) {
+      yaw += turnSpeed * deltaTime;
+    }
+    pitch = std::clamp(pitch, -89.0f, 89.0f);
+
+    if (!frame.uiCapturesMouse) {
+      distance *= 1.0f - input.wheel * zoomSpeed;
+    }
+    distance =
+        std::clamp(distance, minDistance, maxDistance);
+
+    const glm::vec3 front = this->front();
+    const glm::vec3 flatFront =
+        glm::normalize(glm::vec3{front.x, 0.0f, front.z});
+    const glm::vec3 flatRight = glm::normalize(glm::cross(flatFront, WORLD_UP));
+
+    const float step = panSpeed * deltaTime;
+    if (keyboardFree && input.down(SDL_SCANCODE_W)) pivot += flatFront * step;
+    if (keyboardFree && input.down(SDL_SCANCODE_S)) pivot -= flatFront * step;
+    if (keyboardFree && input.down(SDL_SCANCODE_D)) pivot += flatRight * step;
+    if (keyboardFree && input.down(SDL_SCANCODE_A)) pivot -= flatRight * step;
+    pivot.y = groundHeight;
+
+    frame.view = glm::lookAt(position(), pivot, WORLD_UP);
+    frame.proj = glm::perspective(
+        glm::radians(fov),
+        static_cast<float>(frame.extent.width) /
+            static_cast<float>(frame.extent.height),
+        nearPlane, farPlane);
+    frame.proj[1][1] *= -1; // glm is GL-handed, Vulkan's Y points the other way
+    // sky_clouds.slang unprojects assuming this (pre-reversal) NDC convention.
+    frame.skyRayProj = frame.proj;
+
+    // Reversed-Z: near maps to depth 1, far to depth 0. A standard depth buffer
+    // spends almost all of its precision within the first few percent of
+    // [nearPlane, farPlane]; this flip (needs GLM_FORCE_DEPTH_ZERO_TO_ONE, set
+    // in CMakeLists.txt) redistributes it evenly in 1/z instead, so far terrain
+    // stops z-fighting long before farPlane needs to come down to hide it.
+    static const glm::mat4 REVERSE_Z(1, 0, 0, 0,
+                                     0, 1, 0, 0,
+                                     0, 0, -1, 0,
+                                     0, 0, 1, 1);
+    frame.proj = REVERSE_Z * frame.proj;
+};
 void CameraPlugin::UI(entt::registry &reg){
     using namespace ImGui;
     if (Begin("Cameras")) {
