@@ -3,7 +3,6 @@
 #include <SDL3/SDL_mouse.h>
 
 void EventManager::pump() {
-  // Deltas are per frame; the button and key states are levels and persist.
   mouseDeltaX = 0.0f;
   mouseDeltaY = 0.0f;
   wheel = 0.0f;
@@ -23,12 +22,6 @@ void EventManager::pump() {
     case SDL_EVENT_MOUSE_WHEEL:
       wheel += event.wheel.y;
       break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-      if (event.button.button == SDL_BUTTON_MIDDLE) {
-        middleDown = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-      }
-      break;
     case SDL_EVENT_KEY_DOWN:
       if (event.key.key == SDLK_ESCAPE) {
         quit = true;
@@ -39,8 +32,13 @@ void EventManager::pump() {
     }
   }
   keys = SDL_GetKeyboardState(nullptr);
+  buttons = SDL_GetMouseState(nullptr, nullptr);
 }
 
 bool EventManager::down(SDL_Scancode key) const {
   return keys != nullptr && keys[key];
+}
+
+bool EventManager::down(int mouseButton) const {
+  return (buttons & SDL_BUTTON_MASK(mouseButton)) != 0;
 }

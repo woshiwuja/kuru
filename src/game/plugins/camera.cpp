@@ -34,7 +34,7 @@ void CameraPlugin::update(entt::registry &reg) {
   }
   Camera &camera = view.get<Camera>(*view.begin());
 
-  if (input.middleDown && !frame.uiCapturesMouse) {
+  if (input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse) {
     camera.yaw += input.mouseDeltaX * camera.orbitSensitivity;
     camera.pitch -= input.mouseDeltaY * camera.orbitSensitivity;
   }
