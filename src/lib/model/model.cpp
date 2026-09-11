@@ -3,6 +3,8 @@
 #include "../core/core.hpp"
 #include <cmath>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <iostream>
 #include <limits>
 // tiny_gltf.h is the only place stb_image.h comes from, and its implementation
@@ -41,6 +43,36 @@ void Mesh::upload(const std::vector<Vertex> &vertices,
   stage(indices.data(), sizeof(indices[0]) * indices.size(),
         vk::BufferUsageFlagBits::eIndexBuffer, indexBuffer, indexBufferMemory);
 }
+
+namespace {
+
+glm::mat4 nodeLocalMatrix(const tinygltf::Node &node) {
+  if (node.matrix.size() == 16) {
+    glm::mat4 m;
+    for (int c = 0; c < 4; c++) {
+      for (int r = 0; r < 4; r++) {
+        m[c][r] = static_cast<float>(node.matrix[c * 4 + r]);
+      }
+    }
+    return m;
+  }
+  glm::mat4 m(1.0f);
+  if (node.translation.size() == 3) {
+    m = glm::translate(m, glm::vec3(node.translation[0], node.translation[1],
+                                    node.translation[2]));
+  }
+  if (node.rotation.size() == 4) {
+    m *= glm::mat4_cast(glm::quat(
+        static_cast<float>(node.rotation[3]), static_cast<float>(node.rotation[0]),
+        static_cast<float>(node.rotation[1]), static_cast<float>(node.rotation[2])));
+  }
+  if (node.scale.size() == 3) {
+    m = glm::scale(m, glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
+  }
+  return m;
+}
+
+} // namespace
 
 std::shared_ptr<Mesh> loadModel(const std::string &path) {
   tinygltf::Model model;
@@ -95,7 +127,32 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
                                  static_cast<uint32_t>(image.height));
   };
 
-  for (const auto &mesh : model.meshes) {
+  std::vector<std::pair<int, glm::mat4>> instances;
+  const auto visit = [&](auto &&self, int nodeIndex,
+                         const glm::mat4 &parent) -> void {
+    const tinygltf::Node &node = model.nodes[nodeIndex];
+    const glm::mat4 world = parent * nodeLocalMatrix(node);
+    if (node.mesh >= 0) {
+      instances.emplace_back(node.mesh, world);
+    }
+    for (int child : node.children) {
+      self(self, child, world);
+    }
+  };
+  if (!model.scenes.empty()) {
+    const int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
+    for (int root : model.scenes[sceneIndex].nodes) {
+      visit(visit, root, glm::mat4(1.0f));
+    }
+  } else {
+    for (size_t i = 0; i < model.meshes.size(); i++) {
+      instances.emplace_back(static_cast<int>(i), glm::mat4(1.0f));
+    }
+  }
+
+  for (const auto &[meshIndex, nodeMatrix] : instances) {
+    const tinygltf::Mesh &mesh = model.meshes[meshIndex];
+    const glm::mat3 normalMatrix = glm::mat3(nodeMatrix);
     for (const auto &primitive : mesh.primitives) {
       // Get indices
       const tinygltf::Accessor &indexAccessor =
@@ -148,7 +205,7 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
         const float *pos = reinterpret_cast<const float *>(
             &posBuffer.data[posBufferView.byteOffset + posAccessor.byteOffset +
                             i * 12]);
-        vertex.pos = {pos[0], pos[1], pos[2]};
+        vertex.pos = glm::vec3(nodeMatrix * glm::vec4(pos[0], pos[1], pos[2], 1.0f));
         minY = std::min(minY, vertex.pos.y);
         maxY = std::max(maxY, vertex.pos.y);
 
@@ -165,7 +222,8 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
           const float *normal = reinterpret_cast<const float *>(
               &normalBuffer->data[normalBufferView->byteOffset +
                                   normalAccessor->byteOffset + i * 12]);
-          vertex.normal = {normal[0], normal[1], normal[2]};
+          vertex.normal = glm::normalize(
+              normalMatrix * glm::vec3(normal[0], normal[1], normal[2]));
         } else {
           vertex.normal = {0.0f, 1.0f, 0.0f};
         }

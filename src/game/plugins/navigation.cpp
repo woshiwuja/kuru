@@ -2,15 +2,20 @@
 
 #include "../../lib/core/core.hpp"
 #include "map.hpp"
+#include "plugins.hpp"
 #include "render.hpp"
 #include "transform.hpp"
 
 #include <DetourNavMeshBuilder.h>
 #include <Recast.h>
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <format>
+#include <imgui.h>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
@@ -56,7 +61,11 @@ template <typename T, void (*F)(T *)> struct RcOwn {
   T &operator*() const { return *p; }
 };
 
-void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
+// Torna il numero di poligoni della navmesh costruita. `progress` conta i
+// passi numerati qui sotto (NAV_BUILD_STEPS in tutto) per la barra della UI:
+// gira sul thread di build, quindi e' atomico.
+int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
+          std::atomic<int> &progress) {
   rcContext ctx;
 
   rcConfig cfg{};
@@ -84,6 +93,7 @@ void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
     throw std::runtime_error("NavConfig::vertsPerPoly oltre DT_VERTS_PER_POLYGON");
   }
 
+  progress = 1;
   // 1. voxelizzazione
   RcOwn<rcHeightfield, rcFreeHeightField> solid(rcAllocHeightfield());
   if (!rcCreateHeightfield(&ctx, *solid, cfg.width, cfg.height, cfg.bmin,
@@ -101,11 +111,13 @@ void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
     throw std::runtime_error("rcRasterizeTriangles fallita");
   }
 
+  progress = 2;
   // 2. filtri: in quest'ordine, ognuno assume il precedente fatto
   rcFilterLowHangingWalkableObstacles(&ctx, cfg.walkableClimb, *solid);
   rcFilterLedgeSpans(&ctx, cfg.walkableHeight, cfg.walkableClimb, *solid);
   rcFilterWalkableLowHeightSpans(&ctx, cfg.walkableHeight, *solid);
 
+  progress = 3;
   // 3. heightfield compatto ed erosione del raggio dell'agente
   RcOwn<rcCompactHeightfield, rcFreeCompactHeightfield> chf(
       rcAllocCompactHeightfield());
@@ -117,6 +129,7 @@ void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
     throw std::runtime_error("rcErodeWalkableArea fallita");
   }
 
+  progress = 4;
   // 4. regioni watershed: piu' lento delle alternative monotone, ma da' le
   // regioni migliori. ponytail: il partizionamento del demo si sceglie da GUI,
   // qui e' fisso.
@@ -127,6 +140,7 @@ void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
     throw std::runtime_error("rcBuildRegions fallita");
   }
 
+  progress = 5;
   // 5. contorni -> poly mesh -> detail mesh
   RcOwn<rcContourSet, rcFreeContourSet> cset(rcAllocContourSet());
   if (!rcBuildContours(&ctx, *chf, cfg.maxSimplificationError, cfg.maxEdgeLen,
@@ -143,6 +157,7 @@ void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
     throw std::runtime_error("rcBuildPolyMeshDetail fallita");
   }
 
+  progress = 6;
   // 6. da Recast a Detour. Senza questi flag il filtro di query scarta tutto e
   // ogni findNearestPoly torna 0.
   for (int i = 0; i < pmesh->npolys; ++i) {
@@ -176,7 +191,12 @@ void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
   unsigned char *navData = nullptr;
   int navDataSize = 0;
   if (!dtCreateNavMeshData(&params, &navData, &navDataSize)) {
-    throw std::runtime_error("dtCreateNavMeshData fallita");
+    // I suoi due modi di fallire si distinguono solo dai conteggi: nessun
+    // triangolo camminabile (mesh capovolta, slope, erosione) o una tile sola
+    // che non basta piu'.
+    throw std::runtime_error("dtCreateNavMeshData fallita: " +
+                             std::to_string(pmesh->nverts) + " verts, " +
+                             std::to_string(pmesh->npolys) + " polys");
   }
 
   nav.mesh = dtAllocNavMesh();
@@ -200,23 +220,211 @@ void build(NavMap &nav, const NavConfig &c, const NavGeom &geom) {
     throw std::runtime_error("dtCrowd::init fallita");
   }
   nav.crowd->getEditableFilter(0)->setIncludeFlags(NAV_POLY_WALK);
-  // ponytail: i quattro preset di obstacle avoidance di CrowdTool.cpp:162-193
-  // sono per confrontarli da GUI; dtCrowd::init installa gia' un default nello
-  // slot 0, che e' quello che usano gli agenti qui.
+  progress = NAV_BUILD_STEPS;
+  return pmesh->npolys;
 }
 
 } // namespace
 
 void NavigationPlugin::init(entt::registry &reg) {
-  // Registrato dopo MapPlugin, che e' chi crea l'entita' Map con il suo MeshRef.
-  for (auto [e, meshRef, transform] : reg.view<Map, MeshRef, Transform>().each()) {
-    auto &nav = reg.ctx().emplace<NavMap>();
-    build(nav, config, flatten(*meshRef.mesh, transform.matrix()));
-    return; // un solo navmesh: solo mesh, non tiled
+  auto maps = reg.view<Map, MeshRef, Transform>();
+  if (maps.begin() != maps.end()) {
+    target = *maps.begin();
+  }
+  rebuild(reg);
+}
+
+void NavigationPlugin::start(entt::registry &reg) {
+  if (rebuildRequested) {
+    rebuildRequested = false;
+    rebuild(reg);
+  }
+  poll(reg);
+  if (overlayRequested) {
+    overlayRequested = false;
+    if (config.drawDebug) {
+      spawnDebug(reg);
+    } else {
+      clearDebug(reg);
+    }
   }
 }
 
+void NavigationPlugin::rebuild(entt::registry &reg) {
+  if (pending.valid()) return; // uno alla volta
+
+  lastError.clear();
+  lastBuildSeconds = 0.0f;
+  lastPolyCount = 0;
+  if (!reg.valid(target) || !reg.all_of<MeshRef, Transform>(target)) {
+    lastError = "nessuna mesh selezionata";
+    return;
+  }
+
+  clearDebug(reg);
+  // La vecchia crowd muore qui, quindi ogni indice agente che la indicizzava
+  // non vale piu': update() li reinserisce da solo.
+  reg.ctx().erase<NavMap>();
+  for (auto [e, agent] : reg.view<NavAgent>().each()) {
+    agent.idx = -1;
+  }
+
+  // Unica lettura del registry: da qui in poi il worker lavora su una copia
+  // sua, e gli slider della UI possono muoversi senza entrare nel build.
+  NavGeom geom = flatten(*reg.get<MeshRef>(target).mesh,
+                         reg.get<Transform>(target).matrix());
+  const NavConfig cfg = config;
+  buildPhase = 0;
+  buildStarted = std::chrono::steady_clock::now();
+  pending = std::async(std::launch::async,
+                       [this, cfg, geom = std::move(geom)] {
+                         BuildResult out;
+                         out.polyCount = build(out.nav, cfg, geom, buildPhase);
+                         if (cfg.drawDebug) {
+                           out.debug = out.nav.debugGeometry(cfg.debugColor,
+                                                             cfg.debugOffsetY);
+                         }
+                         return out;
+                       });
+}
+
+void NavigationPlugin::poll(entt::registry &reg) {
+  using namespace std::chrono_literals;
+  if (!pending.valid() || pending.wait_for(0s) != std::future_status::ready) {
+    return;
+  }
+  lastBuildSeconds = std::chrono::duration<float>(
+                         std::chrono::steady_clock::now() - buildStarted)
+                         .count();
+  try {
+    BuildResult out = pending.get(); // rilancia l'eccezione del worker
+    lastPolyCount = out.polyCount;
+    reg.ctx().erase<NavMap>();
+    reg.ctx().emplace<NavMap>(std::move(out.nav));
+    spawnDebug(reg, out.debug);
+  } catch (const std::exception &e) {
+    // Una NavMap a meta' e' peggio di nessuna: findNearestPoly su una query
+    // mancante sarebbe un crash, non un percorso vuoto.
+    reg.ctx().erase<NavMap>();
+    lastError = e.what();
+  }
+}
+
+void NavigationPlugin::spawnDebug(entt::registry &reg) {
+  auto *nav = reg.ctx().find<NavMap>();
+  if (nav == nullptr || nav->mesh == nullptr) {
+    clearDebug(reg);
+    return;
+  }
+  spawnDebug(reg, nav->debugGeometry(config.debugColor, config.debugOffsetY));
+}
+
+void NavigationPlugin::spawnDebug(entt::registry &reg, const DebugGeom &geom) {
+  clearDebug(reg);
+  if (geom.indices.empty()) return;
+
+  auto mesh = std::make_shared<Mesh>();
+  mesh->upload(geom.vertices, geom.indices);
+  // Entita' a parte, non la mappa: quella ha gia' MeshRef e Renderable suoi.
+  // Transform identita', i vertici sono gia' in mondo. La texture non la
+  // campiona nessuno (params.x = 2), ma attach() ne pretende una.
+  debugEntity = reg.create();
+  renderer(reg).spawn(reg, debugEntity, std::move(mesh), getTexture(reg, ""),
+                      {2.0f, config.debugAlpha, 0.0f, 0.0f});
+  reg.emplace<DebugMesh>(debugEntity);
+}
+
+void NavigationPlugin::clearDebug(entt::registry &reg) {
+  if (reg.valid(debugEntity)) {
+    // despawn aspetta il device: i buffer possono essere ancora in volo.
+    renderer(reg).despawn(reg, debugEntity);
+  }
+  debugEntity = entt::null;
+}
+
+void NavigationPlugin::UI(entt::registry &reg) {
+  using namespace ImGui;
+  if (Begin("Navigation")) {
+    const auto label = [&reg](entt::entity e) {
+      if (!reg.valid(e)) return std::string("<nessuna>");
+      return std::format("#{} - {} verts{}", entt::to_integral(e),
+                         reg.get<MeshRef>(e).mesh->vertices.size(),
+                         reg.all_of<Map>(e) ? " [map]" : "");
+    };
+    if (BeginCombo("mesh", label(target).c_str())) {
+      for (auto [e, meshRef, transform] :
+           reg.view<MeshRef, Transform>(entt::exclude<DebugMesh>).each()) {
+        if (Selectable(label(e).c_str(), e == target)) target = e;
+      }
+      EndCombo();
+    }
+
+    SeparatorText("agent");
+    DragFloat("height", &config.agentHeight, 0.05f, 0.01f, 100.0f);
+    DragFloat("radius", &config.agentRadius, 0.05f, 0.0f, 100.0f);
+    DragFloat("max climb", &config.agentMaxClimb, 0.05f, 0.0f, 100.0f);
+    SliderFloat("max slope", &config.agentMaxSlope, 0.0f, 90.0f);
+
+    SeparatorText("voxel");
+    DragFloat("cell size", &config.cellSize, 0.05f, 0.01f, 100.0f);
+    SetItemTooltip("Mondo diviso per questo: la mappa e' scalata 1000x, "
+                   "scendere sotto l'unita' vuol dire minuti di build.");
+    DragFloat("cell height", &config.cellHeight, 0.05f, 0.01f, 100.0f);
+
+    SeparatorText("regioni");
+    DragFloat("min size", &config.regionMinSize, 0.5f, 0.0f, 1000.0f);
+    DragFloat("merge size", &config.regionMergeSize, 0.5f, 0.0f, 1000.0f);
+
+    SeparatorText("poligoni");
+    DragFloat("max edge len", &config.edgeMaxLen, 0.5f, 0.0f, 1000.0f);
+    DragFloat("max edge error", &config.edgeMaxError, 0.1f, 0.1f, 10.0f);
+    SliderInt("verts per poly", &config.vertsPerPoly, 3, DT_VERTS_PER_POLYGON);
+    DragFloat("detail sample dist", &config.detailSampleDist, 0.1f, 0.0f,
+              100.0f);
+    DragFloat("detail max error", &config.detailSampleMaxError, 0.1f, 0.0f,
+              100.0f);
+
+    SeparatorText("build");
+    BeginDisabled(pending.valid() || rebuildRequested);
+    if (Button("Rebuild")) {
+      rebuildRequested = true;
+    }
+    EndDisabled();
+    SameLine();
+    if (pending.valid()) {
+      const int phase = buildPhase.load();
+      ProgressBar(static_cast<float>(phase) / NAV_BUILD_STEPS, ImVec2(-1, 0),
+                  std::format("{}/{}", phase, NAV_BUILD_STEPS).c_str());
+    } else if (!lastError.empty()) {
+      TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", lastError.c_str());
+    } else if (lastPolyCount > 0) {
+      Text("%d poly in %.2f s", lastPolyCount, lastBuildSeconds);
+    } else {
+      TextUnformatted("mai costruita");
+    }
+
+    SeparatorText("debug");
+    if (Checkbox("draw debug", &config.drawDebug)) {
+      overlayRequested = true;
+    }
+    if (SliderFloat("alpha", &config.debugAlpha, 0.0f, 1.0f) &&
+        reg.valid(debugEntity)) {
+      reg.get<MaterialRef>(debugEntity).params.y = config.debugAlpha;
+    }
+    ColorEdit3("color", &config.debugColor.x);
+    bool overlayDirty = IsItemDeactivatedAfterEdit();
+    DragFloat("offset Y", &config.debugOffsetY, 0.1f);
+    overlayDirty |= IsItemDeactivatedAfterEdit();
+    if (overlayDirty && config.drawDebug) {
+      overlayRequested = true;
+    }
+  }
+  End();
+}
+
 void NavigationPlugin::update(entt::registry &reg) {
+  UI(reg); // prima dell'uscita anticipata: il pannello serve soprattutto
+           // quando la navmesh non c'e'.
   auto *nav = reg.ctx().find<NavMap>();
   if (nav == nullptr || nav->crowd == nullptr) return; // nessuna mappa caricata
 

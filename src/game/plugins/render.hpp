@@ -44,9 +44,9 @@ struct Renderable {
 	Renderable &operator=(Renderable &&)      = default;
 };
 
-// Marker: at most one entity should carry this. RenderPlugin draws it first,
-// full-screen, with depth write off, so meshes draw over it wherever they
-// exist. No fields - shaders/sky_clouds.slang reads only time and viewport size.
+struct DebugMesh {};
+
+
 struct Sky {};
 
 // ---- plugin -----------------------------------------------------------------
@@ -72,6 +72,7 @@ struct RenderPlugin : Plugin {
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
+	vk::raii::Pipeline            debugPipeline       = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
 
 	// Sky: a separate pipeline (no vertex input, depth write off) and its own

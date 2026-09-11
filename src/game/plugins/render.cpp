@@ -139,6 +139,24 @@ void RenderPlugin::createGraphicsPipeline() {
   graphicsPipeline = vk::raii::Pipeline(
       core->device->device, nullptr,
       pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+  rasterizer.cullMode = vk::CullModeFlagBits::eNone; // see both sides of a poly
+  depthStencil.depthWriteEnable = vk::False; // translucent: test, don't occlude
+  colorBlendAttachment = vk::PipelineColorBlendAttachmentState{
+      .blendEnable = vk::True,
+      .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+      .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+      .colorBlendOp = vk::BlendOp::eAdd,
+      .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+      .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+      .alphaBlendOp = vk::BlendOp::eAdd,
+      .colorWriteMask =
+          vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
+
+  debugPipeline = vk::raii::Pipeline(
+      core->device->device, nullptr,
+      pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
 void RenderPlugin::createDescriptorPool() {
@@ -507,29 +525,21 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
 
-  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                             *graphicsPipeline);
   commandBuffer.setViewport(
       0, vk::Viewport(0.0f, 0.0f, static_cast<float>(frame.extent.width),
                       static_cast<float>(frame.extent.height), 0.0f, 1.0f));
   commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), frame.extent));
 
-  // ponytail: storage order, one bind pair per submesh. Group by MaterialRef
-  // (reg.group<MeshRef, MaterialRef>()) when the bind count starts to show.
-  for (auto [entity, meshRef, renderable] :
-       reg.view<MeshRef, Renderable>().each()) {
-    const Mesh &mesh = *meshRef.mesh;
+  const auto draw = [&](const Mesh &mesh, const Renderable &renderable) {
     commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer, {0});
     commandBuffer.bindIndexBuffer(*mesh.indexBuffer, 0, vk::IndexType::eUint32);
 
     if (mesh.submeshes.empty()) {
-      // Defensive only: loadModel always fills submeshes in for every mesh it
-      // produces, so this only matters for a Mesh built some other way.
       commandBuffer.bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0,
           *renderable.descriptorSets[0][frame.frameIndex], nullptr);
       commandBuffer.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
-      continue;
+      return;
     }
 
     for (size_t s = 0; s < mesh.submeshes.size(); s++) {
@@ -539,6 +549,19 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
           *renderable.descriptorSets[s][frame.frameIndex], nullptr);
       commandBuffer.drawIndexed(sub.indexCount, 1, sub.indexOffset, 0, 0);
     }
+  };
+
+  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                             *graphicsPipeline);
+  for (auto [entity, meshRef, renderable] :
+       reg.view<MeshRef, Renderable>(entt::exclude<DebugMesh>).each()) {
+    draw(*meshRef.mesh, renderable);
+  }
+
+  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *debugPipeline);
+  for (auto [entity, meshRef, renderable] :
+       reg.view<MeshRef, Renderable, DebugMesh>().each()) {
+    draw(*meshRef.mesh, renderable);
   }
 }
 

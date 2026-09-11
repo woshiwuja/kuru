@@ -19,21 +19,23 @@ glm::vec3 Camera::front() const {
 glm::vec3 Camera::position() const { return pivot - front() * distance; }
 
 void CameraPlugin::init(entt::registry &reg) {
-  reg.emplace<MainCamera>(reg.create());
+  const entt::entity camera = reg.create();
+  reg.emplace<Camera>(camera);
+  reg.emplace<MainCamera>(camera);
 }
 
 void CameraPlugin::update(entt::registry &reg) {
   auto &frame = reg.ctx().get<FrameContext>();
-  auto view = reg.view<MainCamera>();
+  auto view = reg.view<Camera, MainCamera>();
   if (view.begin() == view.end()) {
     return;
   }
-  Camera &camera = view.get<MainCamera>(*view.begin());
+  Camera &camera = view.get<Camera>(*view.begin());
   camera.control(frame);
   UI(reg);
 }
 
-void Camera::control(FrameContext frame){
+void Camera::control(FrameContext &frame){
     const auto *core = Core::get();
     const auto &input = *core->eventManager;
     const float deltaTime = core->deltaTime;

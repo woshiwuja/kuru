@@ -29,13 +29,11 @@ struct Camera {
 	[[nodiscard]] glm::vec3 front() const;
 	[[nodiscard]] glm::vec3 position() const;
 
-	void control(FrameContext frame);
+	void control(FrameContext &frame);
 };
 
-struct MainCamera : public Camera{};
-// Owns the camera entity and turns raw input into a view and a projection.
-// Register it before RenderPlugin: the renderer reads what this writes into
-// the FrameContext.
+struct MainCamera {};
+
 struct CameraPlugin : public Plugin {
 	void init(entt::registry &reg) override;
 	void update(entt::registry &reg) override;

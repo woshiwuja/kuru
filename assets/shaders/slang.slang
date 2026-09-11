@@ -20,32 +20,11 @@ struct UniformBufferObject {
 
 [[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
 [[vk::binding(1, 0)]] Sampler2D texSampler;
-// TLAS over the scene's meshes. Host side must bind it at set 0 binding 2 and
-// enable VK_KHR_ray_query + VK_KHR_acceleration_structure - neither exists yet,
-// so this shader crashes drivers without ray query support (the Intel iGPU and
-// NVK here). Kept anyway: the dev box is not the target hardware.
-[[vk::binding(2, 0)]] RaytracingAccelerationStructure tlas;
 
-// Hard sun shadow by inline ray tracing: one ray from the surface toward the
-// sun, terminated on the first hit - occluded or not is all we need, so no
-// closest-hit search and no hit attributes are read.
-// Returns 1 = lit, 0 = shadowed.
-static const float SHADOW_BIAS  = 0.05;   // world units along the normal, kills acne
-static const float SHADOW_RANGE = 1.0e5;  // map is scaled 1000x, so rays must be long
-
-float sunShadow(float3 worldPos, float3 normal) {
-    RayDesc ray;
-    ray.Origin    = worldPos + normal * SHADOW_BIAS;
-    ray.Direction = ubo.sunDirection.xyz;   // already points *toward* the sun
-    ray.TMin      = 0.0;
-    ray.TMax      = SHADOW_RANGE;
-
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
-    q.TraceRayInline(tlas, RAY_FLAG_NONE, 0xFF, ray);
-    // Opaque triangles only, so one Proceed settles it - no candidate loop.
-    q.Proceed();
-    return q.CommittedStatus() == COMMITTED_NOTHING ? 1.0 : 0.0;
-}
+// No sun shadow: it was an inline ray query against a TLAS at binding 2, which
+// the host never bound and this hardware has no VK_KHR_ray_query for anyway.
+// Everything below is lit unoccluded. A shadow map is the way back, not
+// RayQuery.
 
 // Tuning knobs. Nothing here is measured, so expect to nudge them.
 static const float3 SKY_COLOR    = float3(0.35, 0.48, 0.72);
@@ -113,6 +92,12 @@ float edgeFactor(float3 worldPos, float3 normal) {
 
 [shader("fragment")]
 float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : SV_Target {
+    // Debug overlay (material.x == 2): flat vertex color, alpha from material.y.
+    // No lighting, no texture, no shadow ray - it's a diagnostic, not a surface.
+    if (ubo.material.x > 1.5) {
+        return float4(color, ubo.material.y);
+    }
+
     // material.x comes from the UBO, so this branch is uniform across the draw and
     // sampling inside it is safe.
     if (ubo.material.x < 0.5) {
@@ -122,8 +107,7 @@ float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : 
         // rim reads as a terrain-scale atmospheric effect, not something a
         // small textured prop needs.
         float3 lit = albedo * SKY_COLOR * (0.5 + 0.5 * n.y);
-        lit += albedo * ubo.sunColor.xyz * saturate(dot(n, ubo.sunDirection.xyz))
-                      * sunShadow(worldPos, n);
+        lit += albedo * ubo.sunColor.xyz * saturate(dot(n, ubo.sunDirection.xyz));
         lit = lerp(lit, EDGE_COLOR, edgeFactor(worldPos, n));
         return float4(tonemapACES(lit), 1.0);
     }
@@ -148,10 +132,8 @@ float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : 
 
     // Ambient from a sky gradient, direct sun, and a crude single bounce.
     float3 lit = diffuse * SKY_COLOR * (0.5 + 0.5 * normal.y);
-    lit += diffuse * ubo.sunColor.xyz * saturate(dot(normal, ubo.sunDirection.xyz))
-                   * sunShadow(worldPos, normal);
-    // The bounce term stays unshadowed - it stands in for light that already
-    // took a detour, so occluding it would just darken the shadow twice.
+    lit += diffuse * ubo.sunColor.xyz * saturate(dot(normal, ubo.sunDirection.xyz));
+    // Crude single bounce off the ground, from the mirrored sun direction.
     lit += diffuse * ubo.sunColor.xyz * saturate(dot(normal, ubo.sunDirection.xyz * float3(1.0, -1.0, 1.0))) * 0.15;
     lit = lerp(lit, EDGE_COLOR, edgeFactor(worldPos, normal));
 
