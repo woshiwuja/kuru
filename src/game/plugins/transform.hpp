@@ -3,7 +3,9 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/quaternion.hpp"
 #include "imgui.h"
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
+
+using namespace KR;
 
 
 struct Transform {

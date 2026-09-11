@@ -1,6 +1,8 @@
 #pragma once
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include <entt/entt.hpp>
+
+using namespace KR;
 
 // Dear ImGui, docking branch. Register it last: it draws over everything else
 // and it is the one that tells the other plugins when the UI owns the input.

@@ -1,6 +1,5 @@
 #pragma once
-#include "../../lib/core/core.hpp"
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include "Jolt/Math/Vec3.h"
 #include "glm/ext/vector_float3.hpp"
 #include "transform.hpp"
@@ -10,6 +9,8 @@
 #include "Jolt/Physics/EActivation.h"
 #include "entt/entity/fwd.hpp"
 #include "imgui.h"
+
+using namespace KR;
 
 JPH::Vec3 glmVecToJPH(glm::vec3 v){
     return JPH::Vec3(v.x,v.y,v.z);

@@ -1,6 +1,8 @@
 #pragma once
 #include <memory>
 #include <vulkan/vulkan_raii.hpp>
+
+namespace KR {
 struct Device {
   vk::raii::PhysicalDevice physicalDevice = nullptr;
   vk::raii::Device device = nullptr;
@@ -25,3 +27,4 @@ struct Device {
   void copyBuffer(vk::raii::Buffer &srcBuffer, vk::raii::Buffer &dstBuffer,
                   vk::DeviceSize size);
 };
+} // namespace KR

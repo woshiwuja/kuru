@@ -1,9 +1,11 @@
 #pragma once
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include "entt/entity/fwd.hpp"
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <imgui.h>
+
+using namespace KR;
 
 struct DirectionalLight {
   glm::vec3 direction = glm::normalize(glm::vec3(-1.0f, 0.4f, 0.05f));

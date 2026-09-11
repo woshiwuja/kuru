@@ -1,13 +1,12 @@
 #pragma once
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
 
-// An orbit camera. It never rotates in place: it swings around a pivot pinned
-// to the ground plane, so what is under the cursor stays roughly put while you
-// drag. WASD pans the pivot, middle drag orbits, the wheel changes the radius.
-// The speeds are feel, not physics: they are meant to be tuned.
-struct Camera {
+using namespace KR;
+
+namespace KR{
+    struct Camera {
 	glm::vec3 pivot        = {0.0f, 0.0f, 0.0f};
 	float     groundHeight = 2000.0f;
 
@@ -30,12 +29,13 @@ struct Camera {
 	[[nodiscard]] glm::vec3 position() const;
 
 	void control(FrameContext &frame);
-};
+    };
 
-struct MainCamera {};
+    struct MainCamera {};
 
-struct CameraPlugin : public Plugin {
+    struct CameraPlugin : public Plugin {
 	void init(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
 	void UI(entt::registry &reg);
-};
+    };
+}

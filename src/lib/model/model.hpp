@@ -5,6 +5,8 @@
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
 
+namespace KR {
+
 // One glTF primitive's slice of the mesh's shared index buffer, plus its own
 // material texture (null if the primitive had none - falls back to whatever
 // texture the entity was spawned with).
@@ -37,3 +39,4 @@ struct Mesh {
 };
 
 std::shared_ptr<Mesh> loadModel(const std::string &path);
+} // namespace KR

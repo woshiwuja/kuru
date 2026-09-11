@@ -1,9 +1,10 @@
 #include "render.hpp"
 #include "lighting.hpp"
-#include "../../lib/common/common.hpp"
-#include "../../lib/core/core.hpp"
+#include <Kuru.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <random>
+
+using namespace KR;
 
 void RenderPlugin::init(entt::registry &reg) {
   // Other plugins reach the renderer through the registry, not a global.

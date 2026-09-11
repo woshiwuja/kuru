@@ -4,6 +4,8 @@
 #include <SDL3/SDL_scancode.h>
 #include <vector>
 
+namespace KR {
+
 // Drains the SDL queue once per frame and keeps the result around, so plugins
 // read input instead of competing with the window loop for the same events.
 // Interpreting it is their job, not this one's.
@@ -20,3 +22,4 @@ struct EventManager {
 	[[nodiscard]] bool down(SDL_Scancode key) const;
 	[[nodiscard]] bool down(int mouseButton) const;
 };
+} // namespace KR

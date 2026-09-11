@@ -1,6 +1,8 @@
 #pragma once
 #include "../common/common.hpp"
 #include <vulkan/vulkan_raii.hpp>
+
+namespace KR {
 struct Graphics {
   vk::raii::SurfaceKHR surface = nullptr;
   vk::raii::SwapchainKHR swapChain = nullptr;
@@ -42,3 +44,4 @@ struct Graphics {
                                       vk::ImageAspectFlags aspectFlags);
   void createTextureSampler();
 };
+} // namespace KR

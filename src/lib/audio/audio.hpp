@@ -1,4 +1,7 @@
+#pragma once
 #include "SDL3/SDL_audio.h"
+
+namespace KR {
 struct Audio {
   SDL_AudioDeviceID dev;
   void init() {
@@ -10,3 +13,4 @@ struct Audio {
     //dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
   };
 };
+} // namespace KR

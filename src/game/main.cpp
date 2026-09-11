@@ -1,18 +1,19 @@
-#include "game/plugins/camera.hpp"
-#include "game/plugins/lighting.hpp"
-#include "game/plugins/map.hpp"
-#include "game/plugins/mesh_registry.hpp"
-#include "game/plugins/navigation.hpp"
-#include "game/plugins/physics.hpp"
-#include "game/plugins/plugins.hpp"
-#include "game/plugins/render.hpp"
-#include "game/plugins/ui.hpp"
-#include "game/plugins/default.hpp"
-#include "game/plugins/physics.hpp"
-#include "lib/core/core.hpp"
+#include <Kuru.h>
+#include "plugins/camera.hpp"
+#include "plugins/lighting.hpp"
+#include "plugins/map.hpp"
+#include "plugins/mesh_registry.hpp"
+#include "plugins/navigation.hpp"
+#include "plugins/physics.hpp"
+#include "plugins/render.hpp"
+#include "plugins/ui.hpp"
+#include "plugins/default.hpp"
+#include "plugins/physics.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+
+using namespace KR;
 
 int main()
 {

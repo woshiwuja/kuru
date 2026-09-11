@@ -13,6 +13,8 @@
 #include <entt/entt.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <functional>
+
+namespace KR {
 struct Vertex
 {
 	glm::vec3 pos;
@@ -40,16 +42,19 @@ struct Vertex
 	}
 };
 
+} // namespace KR
+
 template <>
-struct std::hash<Vertex>
+struct std::hash<KR::Vertex>
 {
-	size_t operator()(Vertex const &vertex) const noexcept
+	size_t operator()(KR::Vertex const &vertex) const noexcept
 	{
 		return ((std::hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
 		       (hash<glm::vec2>()(vertex.texCoord) << 1) ^ (hash<glm::vec3>()(vertex.normal) << 1);
 	}
 };
 
+namespace KR {
 struct UniformBufferObject
 {
 	alignas(16) glm::mat4 model;
@@ -61,3 +66,4 @@ struct UniformBufferObject
 	alignas(16) glm::vec4 sunDirection;
 	alignas(16) glm::vec4 sunColor;
 };
+} // namespace KR

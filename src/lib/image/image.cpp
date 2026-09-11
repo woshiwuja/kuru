@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <ktx.h>
 
+namespace KR {
+
 namespace {
 // Missing-texture magenta: solid 1x1, tiled by the sampler's wrap mode over
 // whatever UVs the mesh has.
@@ -191,3 +193,4 @@ void Texture::load(const std::string &path)
 
 	view = core->graphics->createImageView(image, textureFormat, vk::ImageAspectFlagBits::eColor);
 }
+} // namespace KR

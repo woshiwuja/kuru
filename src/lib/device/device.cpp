@@ -2,6 +2,8 @@
 #include "../core/core.hpp"
 #include <vulkan/vulkan_profiles.hpp>
 
+namespace KR {
+
 void Device::pickPhysicalDevice() {
     auto core = Core::Core::get();
     std::vector<vk::raii::PhysicalDevice> physicalDevices =
@@ -178,3 +180,4 @@ void Device::copyBuffer(vk::raii::Buffer &srcBuffer, vk::raii::Buffer &dstBuffer
                             vk::BufferCopy{.size = size});
   endSingleTimeCommands(*commandBuffer);
 }
+} // namespace KR

@@ -1,6 +1,8 @@
 #include "../core/core.hpp"
 #include <SDL3/SDL_filesystem.h>
 #include <fstream>
+
+namespace KR {
 uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties props,
                         uint32_t typeFilter,
                         vk::MemoryPropertyFlags memProps) {
@@ -50,3 +52,4 @@ std::vector<char> readFile(const std::string &filename) {
   file.close();
   return buffer;
 }
+} // namespace KR

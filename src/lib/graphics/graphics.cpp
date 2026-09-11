@@ -3,6 +3,8 @@
 #include "SDL3/SDL_video.h"
 #include "SDL3/SDL_vulkan.h"
 #include <vulkan/vulkan_core.h>
+
+namespace KR {
 void Graphics::init() { createSurface(); }
 void Graphics::createSurface() {
   const auto& core = Core::Core::get();
@@ -228,3 +230,4 @@ bool Graphics::hasStencilComponent(vk::Format format) {
   return format == vk::Format::eD32SfloatS8Uint ||
          format == vk::Format::eD24UnormS8Uint;
 }
+} // namespace KR

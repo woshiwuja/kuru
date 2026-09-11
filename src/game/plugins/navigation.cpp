@@ -1,6 +1,6 @@
 #include "navigation.hpp"
 
-#include "../../lib/core/core.hpp"
+#include <Kuru.h>
 #include "map.hpp"
 #include "plugins.hpp"
 #include "render.hpp"
@@ -17,6 +17,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+using namespace KR;
 
 namespace {
 

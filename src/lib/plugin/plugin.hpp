@@ -3,6 +3,8 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
+namespace KR {
+
 struct FrameContext {
 	const vk::raii::CommandBuffer *commandBuffer = nullptr;
 	uint32_t                       frameIndex    = 0;
@@ -31,3 +33,4 @@ struct Plugin {
 	virtual void update(entt::registry &reg) {}
 	virtual void end(entt::registry &reg) {}
 };
+} // namespace KR

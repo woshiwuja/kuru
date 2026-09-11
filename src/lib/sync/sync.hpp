@@ -1,6 +1,8 @@
 #pragma once
 #include <vulkan/vulkan_raii.hpp>
 #include <vector>
+
+namespace KR {
 struct Sync {
     std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
     std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
@@ -8,3 +10,4 @@ struct Sync {
     uint32_t frameIndex = 0;
     void init();
 };
+} // namespace KR

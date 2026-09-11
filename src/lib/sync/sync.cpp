@@ -1,6 +1,8 @@
 #include "sync.hpp"
 #include "../core/core.hpp"
 
+namespace KR {
+
 void Sync::init() {
       auto core = Core::Core::get();
       assert(presentCompleteSemaphores.empty() &&
@@ -16,3 +18,4 @@ void Sync::init() {
             vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
       }
 }
+} // namespace KR

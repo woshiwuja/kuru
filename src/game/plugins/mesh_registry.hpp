@@ -4,9 +4,9 @@
 #include <memory>
 #include <string>
 
-#include "../../lib/common/common.hpp"
-#include "../../lib/model/model.hpp"
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
+
+using namespace KR;
 
 constexpr auto cube = "primitive:cube";
 constexpr auto sphere = "primitive:cube";
@@ -17,10 +17,10 @@ struct MeshLoader {
     // Magic path instead of a file: lets spawn()/getMesh() hand out a
     // procedural sphere through the same cache as everything else.
     if (path == "primitive:sphere") {
-      return createSphere();
+      //return createSphere();
     }
     if (path == "primitive:cube") {
-      return createCube();
+      //return createCube();
     }
     return loadModel(path);
   }

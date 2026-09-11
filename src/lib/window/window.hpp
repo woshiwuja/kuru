@@ -2,6 +2,8 @@
 #include "SDL3/SDL_video.h"
 #include <SDL3/SDL.h>
 #include <string>
+
+namespace KR {
 struct Window{
     int width = 800;
     int height = 600;
@@ -10,3 +12,4 @@ struct Window{
     void init();
     void quit();
 };
+} // namespace KR

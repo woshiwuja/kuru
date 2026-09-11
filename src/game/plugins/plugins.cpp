@@ -1,6 +1,8 @@
 #include "plugins.hpp"
 #include "mesh_registry.hpp"
 
+using namespace KR;
+
 RenderPlugin &renderer(entt::registry &reg) {
   auto *plugin = reg.ctx().find<RenderPlugin *>();
   assert(plugin != nullptr && *plugin != nullptr &&

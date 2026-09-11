@@ -3,6 +3,8 @@
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
 
+namespace KR {
+
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 // Descriptor pool ceiling, not a live count. Counts submeshes, not entities:
 // a multi-material mesh (e.g. a character with separate body/claws/head/legs
@@ -26,3 +28,4 @@ void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 std::string assetPath(const std::string &relative);
 
 std::vector<char> readFile(const std::string &filename);
+} // namespace KR

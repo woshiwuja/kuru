@@ -1,5 +1,5 @@
 #pragma once
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include <DetourCrowd.h>
 #include <DetourNavMesh.h>
 #include <DetourNavMeshQuery.h>
@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 #include "mesh_registry.hpp"
+
+using namespace KR;
 
 // Un solo flag: qui non c'e' acqua, erba o porte, quindi ogni poly camminabile
 // vale 1 e il filtro include 1. ponytail: la tassonomia SAMPLE_POLYAREA_* del
@@ -53,7 +55,7 @@ struct NavConfig {
   bool drawDebug = true;
   glm::vec3 debugColor = {0.0f, 0.6f, 1.0f};
   float debugAlpha = 0.4f;
-  float debugOffsetY = 1.0f;
+  float debugOffsetY = 0.1f;
 };
 
 // Possiede i tre oggetti Detour. Non copiabile: una copia raddoppierebbe le

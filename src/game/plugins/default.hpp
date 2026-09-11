@@ -1,5 +1,5 @@
 #pragma once
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include "Jolt/Physics/Body/BodyCreationSettings.h"
@@ -14,6 +14,8 @@
 #include "render.hpp"
 #include <format>
 #include <string>
+
+using namespace KR;
 
 struct Name {
   std::string text;
@@ -31,12 +33,12 @@ struct DefaultPlugin : public Plugin {
     using namespace JPH::literals;
     auto &bodySettings = reg.emplace<JPH::BodyCreationSettings>(
         e, new JPH::SphereShape(1.0f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
-        JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, kr::MOVING);
+        JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
     // Spawns 1500+ units above the terrain and free-falls into it; by impact
     // it's moving fast enough that discrete collision can miss the heightfield
     // between steps (tunnels through). LinearCast sweeps the shape instead.
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
-    spawn(reg, e, "primitive:sphere", "textures/viking_room.ktx2");
+    spawn(reg, e, "models/spongebob.glb", "");
 
     entt::entity mapEnt = reg.create();
     reg.emplace<Character>(mapEnt);

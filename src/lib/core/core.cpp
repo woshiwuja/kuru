@@ -7,6 +7,10 @@
 #include <iostream>
 #include <memory>
 
+namespace KR {
+
+Core *Core::s_instance = nullptr;
+
 Core::Core() {
   assert(s_instance == nullptr && "only one Core may exist at a time");
   s_instance = this;
@@ -301,3 +305,4 @@ bool Core::checkValidationLayerSupport() const {
                                                lp.layerName) == 0);
                               }));
 }
+} // namespace KR

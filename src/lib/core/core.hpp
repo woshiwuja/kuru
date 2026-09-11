@@ -12,6 +12,8 @@
 #include <vulkan/vulkan_raii.hpp>
 #include "../physics/physics.hpp"
 
+namespace KR {
+
 struct AppInfo {
   bool profileSupported = false;
   VpProfileProperties profile;
@@ -45,8 +47,9 @@ struct Core {
   void run();
   void end();
 
-  static inline Core *s_instance =
-      nullptr; // `instance` is taken by the vk::raii::Instance member
+  // Defined in core.cpp, not inline: an inline member would give the DLL and
+  // each consumer its own copy. (`instance` is the vk::raii::Instance member.)
+  static Core *s_instance;
   // Seconds since the previous frame, refreshed at the top of drawFrame.
   float deltaTime = 0.0f;
   std::vector<vk::raii::CommandBuffer> commandBuffers;
@@ -72,3 +75,4 @@ struct Core {
   [[nodiscard]] std::vector<const char *> getRequiredInstanceExtensions() const;
   [[nodiscard]] bool checkValidationLayerSupport() const;
 };
+} // namespace KR

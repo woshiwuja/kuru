@@ -1,5 +1,7 @@
 #include "debug.hpp"
 #include <iostream>
+
+namespace KR {
 VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
     vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
     vk::DebugUtilsMessageTypeFlagsEXT type,
@@ -11,3 +13,4 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
   }
   return vk::False;
 }
+} // namespace KR

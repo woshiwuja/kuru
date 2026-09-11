@@ -2,6 +2,8 @@
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
 
+namespace KR {
+
 void EventManager::pump() {
   mouseDeltaX = 0.0f;
   mouseDeltaY = 0.0f;
@@ -42,3 +44,4 @@ bool EventManager::down(SDL_Scancode key) const {
 bool EventManager::down(int mouseButton) const {
   return (buttons & SDL_BUTTON_MASK(mouseButton)) != 0;
 }
+} // namespace KR

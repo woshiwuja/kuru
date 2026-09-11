@@ -13,6 +13,8 @@
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include <tiny_gltf.h>
 
+namespace KR {
+
 void Mesh::upload(const std::vector<Vertex> &vertices,
                   const std::vector<uint32_t> &indices) {
   assert(!vertices.empty() && !indices.empty());
@@ -396,3 +398,4 @@ std::shared_ptr<Mesh> createCube(float halfExtent) {
   mesh->upload(vertices, indices);
   return mesh;
 }
+} // namespace KR

@@ -1,11 +1,11 @@
 #pragma once
-#include "../../lib/image/image.hpp"
-#include "../../lib/model/model.hpp"
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include <glm/glm.hpp>
 #include <memory>
 #include <vulkan/vulkan_raii.hpp>
 #include "transform.hpp"
+
+using namespace KR;
 
 // ---- components -------------------------------------------------------------
 

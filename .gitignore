@@ -8,3 +8,4 @@ vulkansdk-linux-x86_64-*/
 
 # stray, not an asset
 textures/*.pdf
+imgui.ini

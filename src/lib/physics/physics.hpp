@@ -15,14 +15,14 @@
 #include <Jolt/RegisterTypes.h>
 #include <optional>
 
-namespace kr {
+namespace KR {
+
 static constexpr JPH::ObjectLayer NON_MOVING = 0;
 static constexpr JPH::ObjectLayer MOVING = 1;
 static constexpr JPH::uint NUM_LAYERS = 2;
 static constexpr JPH::BroadPhaseLayer BD_NON_MOVING(0);
 static constexpr JPH::BroadPhaseLayer BD_MOVING(1);
 static constexpr JPH::uint BD_NUM_LAYERS(2);
-} // namespace kr
 
 struct PhysicsManager {
   const JPH::uint maxBodies = 65535;
@@ -36,12 +36,12 @@ struct PhysicsManager {
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
 
-    bpLayers.MapObjectToBroadPhaseLayer(kr::NON_MOVING, kr::BD_NON_MOVING);
-    bpLayers.MapObjectToBroadPhaseLayer(kr::MOVING, kr::BD_MOVING);
-    objectPairs.EnableCollision(kr::MOVING, kr::NON_MOVING);
-    objectPairs.EnableCollision(kr::MOVING, kr::MOVING);
-    objVsBpLayers.emplace(bpLayers, kr::BD_NUM_LAYERS, objectPairs,
-                          kr::NUM_LAYERS);
+    bpLayers.MapObjectToBroadPhaseLayer(NON_MOVING, BD_NON_MOVING);
+    bpLayers.MapObjectToBroadPhaseLayer(MOVING, BD_MOVING);
+    objectPairs.EnableCollision(MOVING, NON_MOVING);
+    objectPairs.EnableCollision(MOVING, MOVING);
+    objVsBpLayers.emplace(bpLayers, BD_NUM_LAYERS, objectPairs,
+                          NUM_LAYERS);
     system.Init(maxBodies, numBodyMutexes, maxBodyPairs, maxContactConstraints,
                 bpLayers, *objVsBpLayers, objectPairs);
   }
@@ -59,9 +59,10 @@ struct PhysicsManager {
   JPH::TempAllocatorImpl tempAllocator{10 * 1024 * 1024};
   JPH::JobSystemThreadPool jobSystem{JPH::cMaxPhysicsJobs,
                                      JPH::cMaxPhysicsBarriers};
-  JPH::BroadPhaseLayerInterfaceTable bpLayers{kr::NUM_LAYERS,
-                                              kr::BD_NUM_LAYERS};
-  JPH::ObjectLayerPairFilterTable objectPairs{kr::NUM_LAYERS};
+  JPH::BroadPhaseLayerInterfaceTable bpLayers{NUM_LAYERS,
+                                              BD_NUM_LAYERS};
+  JPH::ObjectLayerPairFilterTable objectPairs{NUM_LAYERS};
   std::optional<JPH::ObjectVsBroadPhaseLayerFilterTable> objVsBpLayers;
   JPH::PhysicsSystem system;
 };
+} // namespace KR

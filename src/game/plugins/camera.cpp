@@ -1,12 +1,13 @@
 #include "camera.hpp"
-#include "../../lib/core/core.hpp"
+#include <Kuru.h>
 #include "entt/entity/fwd.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 
-namespace {
+using namespace KR;
+
+namespace KR {
 constexpr glm::vec3 WORLD_UP = {0.0f, 1.0f, 0.0f};
-}
 
 glm::vec3 Camera::front() const {
   const float yawRad = glm::radians(yaw);
@@ -127,4 +128,5 @@ void CameraPlugin::UI(entt::registry &reg){
       }
     }
    End();
+}
 }

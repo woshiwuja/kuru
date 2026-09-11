@@ -3,6 +3,8 @@
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
 
+namespace KR {
+
 struct Texture
 {
 	vk::raii::Image        image  = nullptr;
@@ -39,3 +41,4 @@ void transitionImageLayout(const vk::raii::Image &image,
                            vk::ImageLayout newLayout);
 void copyBufferToImage(const vk::raii::Buffer &buffer, vk::raii::Image &image,
                        uint32_t width, uint32_t height);
+} // namespace KR

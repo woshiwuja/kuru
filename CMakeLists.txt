@@ -33,24 +33,18 @@ else()
     # loader ships under lib/VulkanLoader/lib, not where FindVulkan looks
     list(APPEND CMAKE_PREFIX_PATH "${_sdk}/lib/VulkanLoader")
   endif()
-  set(GLFW_BUILD_WAYLAND OFF) # ponytail: X11 only; flip on when wayland dev pkgs are around
   # ponytail: optional X11 extras whose -dev packages aren't installed here
   set(SDL_X11_XSCRNSAVER OFF)
   set(SDL_X11_XTEST OFF)
 endif()
 find_package(Vulkan REQUIRED)
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON) # KuruLib is shared; its static deps must be too
+
 include(FetchContent)
 FetchContent_Declare(glm
   GIT_REPOSITORY https://github.com/g-truc/glm.git
   GIT_TAG 1.0.1
-  GIT_SHALLOW TRUE)
-set(GLFW_BUILD_DOCS OFF)
-set(GLFW_BUILD_TESTS OFF)
-set(GLFW_BUILD_EXAMPLES OFF)
-FetchContent_Declare(glfw
-  GIT_REPOSITORY https://github.com/glfw/glfw.git
-  GIT_TAG 3.4
   GIT_SHALLOW TRUE)
 FetchContent_Declare(entt
   GIT_REPOSITORY https://github.com/skypjack/entt.git
@@ -108,9 +102,10 @@ FetchContent_Declare(recastnavigation
   GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
   GIT_TAG v1.6.0
   GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(glm glfw entt stb tinygltf ktx sdl3 imgui jolt recastnavigation)
+FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 imgui jolt recastnavigation)
 
-file(GLOB_RECURSE KURU_SRC src/lib/*.cpp src/game/*.cpp)
+file(GLOB_RECURSE KURU_LIB_SRC src/lib/*.cpp)
+file(GLOB_RECURSE KURU_GAME_SRC src/game/*.cpp)
 set(IMGUI_SRC
   ${imgui_SOURCE_DIR}/imgui.cpp
   ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -120,23 +115,35 @@ set(IMGUI_SRC
   ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp # InputText on std::string
   ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
   ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
-add_executable(Kuru src/main.cpp ${KURU_SRC} ${IMGUI_SRC})
-target_link_libraries(Kuru PRIVATE Vulkan::Vulkan glfw SDL3::SDL3 glm::glm EnTT::EnTT ktx
-  Jolt::Jolt RecastNavigation::Recast RecastNavigation::Detour
+
+# The engine (namespace KR), consumed through src/lib/Kuru.h.
+# WINDOWS_EXPORT_ALL_SYMBOLS: no per-symbol __declspec sprinkling; CMake writes
+# the .def. It only covers functions, so the library exposes no extern data.
+add_library(KuruLib SHARED ${KURU_LIB_SRC})
+set_target_properties(KuruLib PROPERTIES OUTPUT_NAME Kuru WINDOWS_EXPORT_ALL_SYMBOLS ON)
+target_include_directories(KuruLib PUBLIC src/lib)
+# PUBLIC: these all appear in Kuru.h's own headers, so consumers need them too.
+target_link_libraries(KuruLib PUBLIC Vulkan::Vulkan SDL3::SDL3 glm::glm EnTT::EnTT Jolt::Jolt
+  PRIVATE ktx)
+# stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
+target_include_directories(KuruLib PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR})
+# The first two change struct layout/ABI, so they have to match in the game too.
+# model.cpp/image.cpp hold the single header-only implementation.
+target_compile_definitions(KuruLib
+  PUBLIC VULKAN_HPP_NO_STRUCT_CONSTRUCTORS GLM_FORCE_DEPTH_ZERO_TO_ONE
+  PRIVATE TINYGLTF_IMPLEMENTATION STB_IMAGE_IMPLEMENTATION)
+
+add_executable(Kuru ${KURU_GAME_SRC} ${IMGUI_SRC})
+target_link_libraries(Kuru PRIVATE KuruLib
+  RecastNavigation::Recast RecastNavigation::Detour
   RecastNavigation::DetourCrowd RecastNavigation::DetourTileCache RecastNavigation::DebugUtils)
+target_include_directories(Kuru PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 if(MSVC)
   # clang-cl/cl.exe default to exceptions off; Kuru's error paths (and tinygltf/nlohmann json) use throw/try.
   # PRIVATE: Jolt's own CMakeLists disables exceptions for itself and must not see this.
+  target_compile_options(KuruLib PRIVATE /EHsc)
   target_compile_options(Kuru PRIVATE /EHsc)
 endif()
-# stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
-target_include_directories(Kuru PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR}
-  ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
-# main.cpp initialises vk structs with designated initialisers
-# main.cpp expects the tinygltf impl macro on the command line (see its include block)
-# camera.cpp's reversed-Z projection needs glm to emit Vulkan's [0,1] depth range
-target_compile_definitions(Kuru PRIVATE VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
-  TINYGLTF_IMPLEMENTATION STB_IMAGE_IMPLEMENTATION GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
 # main.cpp opens textures/ and models/ cwd-relative too. ponytail: configure-time copy, static assets
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures ${CMAKE_CURRENT_SOURCE_DIR}/assets/models

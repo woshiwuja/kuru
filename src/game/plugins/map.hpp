@@ -1,5 +1,5 @@
 #pragma once
-#include "../../lib/plugin/plugin.hpp"
+#include <Kuru.h>
 #include "plugins.hpp"
 #include "render.hpp"
 #include "mesh_registry.hpp"
@@ -11,8 +11,9 @@
 #include <cmath>
 #include <limits>
 #include <vector>
-#include "../../lib/core/core.hpp"
 #include "transform.hpp"
+
+using namespace KR;
 
 struct Map {};
 struct MapPlugin : public Plugin {
@@ -104,7 +105,7 @@ struct MapPlugin : public Plugin {
     JPH::RVec3(0, 0, 0),          // position
     JPH::Quat::sIdentity(),       // rotation
     JPH::EMotionType::Static,     // heightfields are always static
-    kr::NON_MOVING            // your object layer for static geometry
+    KR::NON_MOVING            // your object layer for static geometry
 		);
 		JPH::BodyInterface &bodyInterface = p->bodies();
 		JPH::BodyID heightFieldID = bodyInterface.CreateAndAddBody(bodySettings, JPH::EActivation::Activate);
