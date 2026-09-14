@@ -7,6 +7,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <memory>
+#include <typeinfo>
 
 namespace KR {
 
@@ -17,13 +18,21 @@ Core::Core() {
   s_instance = this;
   // Jolt's allocation hooks are null until this runs; physicsManager below
   // constructs a TempAllocatorImpl that allocates immediately.
+  std::cerr << "[debug] Core::Core: RegisterDefaultAllocator\n" << std::flush;
   JPH::RegisterDefaultAllocator();
+  std::cerr << "[debug] Core::Core: making Window\n" << std::flush;
   window = std::make_unique<Window>(Window{.width = 800, .height = 600});
+  std::cerr << "[debug] Core::Core: making EventManager\n" << std::flush;
   eventManager = std::make_unique<EventManager>();
+  std::cerr << "[debug] Core::Core: making Device\n" << std::flush;
   device = std::make_unique<Device>();
+  std::cerr << "[debug] Core::Core: making Graphics\n" << std::flush;
   graphics = std::make_unique<Graphics>();
+  std::cerr << "[debug] Core::Core: making Sync\n" << std::flush;
   sync = std::make_unique<Sync>();
+  std::cerr << "[debug] Core::Core: making PhysicsManager\n" << std::flush;
   physicsManager = std::make_unique<PhysicsManager>();
+  std::cerr << "[debug] Core::Core: done\n" << std::flush;
 }
 
 Core::~Core() {
@@ -37,9 +46,13 @@ Core *Core::get() {
 }
 
 void Core::init() {
+  std::cerr << "[debug] Core::init: initVulkan\n" << std::flush;
   initVulkan();
+  std::cerr << "[debug] Core::init: initPhysics\n" << std::flush;
   initPhysics();
+  std::cerr << "[debug] Core::init: initECS\n" << std::flush;
   initECS();
+  std::cerr << "[debug] Core::init: done\n" << std::flush;
   running = true;
 }
 
@@ -53,18 +66,31 @@ void Core::end() {
 }
 
 void Core::initVulkan() {
+  std::cerr << "[debug] initVulkan: window->init\n" << std::flush;
   window->init();
+  std::cerr << "[debug] initVulkan: createInstance\n" << std::flush;
   createInstance();
+  std::cerr << "[debug] initVulkan: graphics->createSurface\n" << std::flush;
   graphics->createSurface();
+  std::cerr << "[debug] initVulkan: device->pickPhysicalDevice\n" << std::flush;
   device->pickPhysicalDevice();
+  std::cerr << "[debug] initVulkan: device->createLogicalDevice\n" << std::flush;
   device->createLogicalDevice();
+  std::cerr << "[debug] initVulkan: graphics->createSwapChain\n" << std::flush;
   graphics->createSwapChain();
+  std::cerr << "[debug] initVulkan: graphics->createImageViews\n" << std::flush;
   graphics->createImageViews();
+  std::cerr << "[debug] initVulkan: device->createCommandPool\n" << std::flush;
   device->createCommandPool();
+  std::cerr << "[debug] initVulkan: graphics->createDepthResources\n" << std::flush;
   graphics->createDepthResources();
+  std::cerr << "[debug] initVulkan: graphics->createTextureSampler\n" << std::flush;
   graphics->createTextureSampler();
+  std::cerr << "[debug] initVulkan: createCommandBuffers\n" << std::flush;
   createCommandBuffers();
+  std::cerr << "[debug] initVulkan: sync->init\n" << std::flush;
   sync->init();
+  std::cerr << "[debug] initVulkan: done\n" << std::flush;
 }
 
 void Core::addPlugin(std::unique_ptr<Plugin> plugin) {
@@ -75,6 +101,8 @@ void Core::initPhysics() { physicsManager->init(); };
 void Core::initECS() {
   reg.ctx().emplace<FrameContext>();
   for (auto &plugin : plugins) {
+    std::cerr << "[debug] initECS: plugin->init " << typeid(*plugin).name()
+               << "\n" << std::flush;
     plugin->init(reg);
   }
 }

@@ -34,7 +34,7 @@ struct DefaultPlugin : public Plugin {
     using namespace JPH::literals;
     auto &bodySettings = reg.emplace<JPH::BodyCreationSettings>(
         e, new JPH::SphereShape(1.0f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
-        JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
+        JPH::Quat::sIdentity(), JPH::EMotionType::Kinematic, MOVING);
     // Spawns 1500+ units above the terrain and free-falls into it; by impact
     // it's moving fast enough that discrete collision can miss the heightfield
     // between steps (tunnels through). LinearCast sweeps the shape instead.
