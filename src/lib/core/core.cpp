@@ -1,5 +1,6 @@
 #include "core.hpp"
 #include "../image/image.hpp"
+#include "physics/physics.hpp"
 #include <SDL3/SDL_vulkan.h>
 #include <cassert>
 #include <chrono>

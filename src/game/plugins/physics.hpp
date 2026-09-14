@@ -1,5 +1,6 @@
 #pragma once
 #include <Kuru.h>
+#include <Jolt/Jolt.h>
 #include "Jolt/Math/Vec3.h"
 #include "glm/ext/vector_float3.hpp"
 #include "transform.hpp"
@@ -32,7 +33,7 @@ struct PhysicsPlugin : public Plugin {
           e, bodies.CreateAndAddBody(settings, JPH::EActivation::Activate));
       reg.erase<JPH::BodyCreationSettings>(e);
     }
-    physics->update(Core::get()->deltaTime);
+    physics->update();
     for (auto [e, t, id] : reg.view<Transform, JPH::BodyID>().each()) {
       if (!bodies.IsActive(id))
         continue;

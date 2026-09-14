@@ -1,6 +1,3 @@
-#include <Jolt/Jolt.h>
-#include "Jolt/Physics/Collision/TransformedShape.h"
-#include "SDL3/SDL_mouse.h"
 #include "camera.hpp"
 #include "character.hpp"
 #include <Kuru.h>

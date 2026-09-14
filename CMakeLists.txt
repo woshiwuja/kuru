@@ -72,6 +72,15 @@ FetchContent_Declare(ktx
   GIT_SHALLOW TRUE)
 set(SDL_TEST_LIBRARY OFF)
 set(SDL_EXAMPLES OFF)
+# Shared, not the BUILD_SHARED_LIBS=OFF default above: SDL is linked into both
+# KuruLib.dll and Kuru.exe (game/plugins/*.hpp use SDL types directly), and a
+# static SDL means each binary gets its own separate, independently-
+# uninitialized copy of SDL's global subsystem state on Windows - the exe's
+# copy never sees Window::init()'s SDL_Init(), so any SDL call made from
+# exe-side code (e.g. imgui's SDL3 backend) reads uninitialized state and
+# crashes. One real SDL3.dll shared by both binaries has just the one state.
+set(SDL_SHARED ON CACHE BOOL "" FORCE)
+set(SDL_STATIC OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(sdl3
   GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
   GIT_TAG release-3.4.16
@@ -85,6 +94,13 @@ FetchContent_Declare(imgui
 # Jolt's Vulkan backend adds Vulkan_INCLUDE_DIRS as a PUBLIC include dir, which CMake
 # rejects because the SDK sits inside our source tree. ponytail: we don't use Jolt on the GPU
 set(JPH_USE_VK OFF)
+# Shared, same reasoning as SDL3 above: Jolt is linked into both KuruLib.dll
+# and Kuru.exe, and a static Jolt means each binary gets its own separate
+# JPH::Allocate/JPH::Factory::sInstance - the exe's copy never gets the
+# RegisterDefaultAllocator()/Factory setup Core::Core() does on KuruLib's
+# copy, so `new`ing any Jolt type from exe-side code (e.g. DefaultPlugin's
+# SphereShape) calls through a null allocator function pointer and crashes.
+set(JPH_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 # Jolt's CMakeLists lives in Build/, not the repo root
 FetchContent_Declare(jolt
   GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
@@ -123,6 +139,9 @@ add_library(KuruLib SHARED ${KURU_LIB_SRC})
 set_target_properties(KuruLib PROPERTIES OUTPUT_NAME Kuru WINDOWS_EXPORT_ALL_SYMBOLS ON)
 target_include_directories(KuruLib PUBLIC src/lib)
 # PUBLIC: these all appear in Kuru.h's own headers, so consumers need them too.
+# Jolt and SDL3 build shared (see the FetchContent_Declare comments above) so
+# there is exactly one instance of each process-wide, even though both
+# KuruLib.dll and Kuru.exe link them.
 target_link_libraries(KuruLib PUBLIC Vulkan::Vulkan SDL3::SDL3 glm::glm EnTT::EnTT Jolt::Jolt
   PRIVATE ktx)
 # stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
@@ -144,6 +163,13 @@ if(MSVC)
   target_compile_options(KuruLib PRIVATE /EHsc)
   target_compile_options(Kuru PRIVATE /EHsc)
 endif()
+
+# Jolt/SDL3 now build as DLLs (see the FetchContent_Declare comments above):
+# put them next to Kuru.exe so the loader finds them. copy_if_different (not
+# file(COPY) at configure time) so a rebuilt SDL3.dll/Jolt.dll gets picked up.
+add_custom_command(TARGET Kuru POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE:Jolt::Jolt> $<TARGET_FILE_DIR:Kuru>)
 
 # main.cpp opens textures/ and models/ cwd-relative too. ponytail: configure-time copy, static assets
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures ${CMAKE_CURRENT_SOURCE_DIR}/assets/models

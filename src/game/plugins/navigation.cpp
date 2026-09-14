@@ -78,7 +78,7 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   // (RecastDemo's default 0.3) blows past any sane memory budget on a terrain
   // spanning thousands of units, and fails the allocation instead of just
   // being slow. Coarsen cs so the grid stays bounded.
-  constexpr int MAX_GRID_DIM = 2000;
+  constexpr int MAX_GRID_DIM = 8000;
   const float spanX = geom.bmax[0] - geom.bmin[0];
   const float spanZ = geom.bmax[2] - geom.bmin[2];
   const float minCellSize = std::max(spanX, spanZ) / MAX_GRID_DIM;

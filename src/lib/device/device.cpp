@@ -61,27 +61,18 @@ void Device::createLogicalDevice() {
   // query for Vulkan 1.3 features
   auto features = physicalDevice.getFeatures2();
   vk::PhysicalDeviceVulkan11Features vulkan11Features;
-  vk::PhysicalDeviceVulkan12Features vulkan12Features;
   vk::PhysicalDeviceVulkan13Features vulkan13Features;
   vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
       extendedDynamicStateFeatures;
-      vk::PhysicalDeviceAccelerationStructureFeaturesKHR pdaFeatures;
-      vk::PhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures;
   // sky_clouds.slang's SV_VertexID lowers to VertexIndex - BaseVertex, which
   // needs this even though every draw here uses firstVertex 0.
   vulkan11Features.shaderDrawParameters = vk::True;
-  vulkan12Features.bufferDeviceAddress = true;
   vulkan13Features.dynamicRendering = vk::True;
   vulkan13Features.synchronization2 = vk::True;
   extendedDynamicStateFeatures.extendedDynamicState = vk::True;
-  pdaFeatures.accelerationStructure = true;
-  rayQueryFeatures.rayQuery = true;
 
   vulkan13Features.pNext = &extendedDynamicStateFeatures;
-  pdaFeatures.pNext = &pdaFeatures;
-  rayQueryFeatures.pNext= &pdaFeatures;
-  vulkan12Features.pNext = &vulkan13Features;
-  vulkan11Features.pNext = &vulkan12Features;
+  vulkan11Features.pNext = &vulkan13Features;
 
   features.pNext = &vulkan11Features;
   // create a Device

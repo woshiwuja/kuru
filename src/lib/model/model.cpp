@@ -93,7 +93,9 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   }
 
   if (!ret) {
-    throw std::runtime_error("Failed to load glTF model");
+    std::cout << "glTF: could not load \"" << path
+              << "\", using a placeholder cube instead\n";
+    return createCube();
   }
 
   std::vector<Vertex> vertices;
