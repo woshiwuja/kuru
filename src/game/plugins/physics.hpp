@@ -12,7 +12,7 @@
 
 using namespace KR;
 
-JPH::Vec3 glmVecToJPH(glm::vec3 v){
+inline JPH::Vec3 glmVecToJPH(glm::vec3 v){
     return JPH::Vec3(v.x,v.y,v.z);
 }
 struct PhysicsPlugin : public Plugin {

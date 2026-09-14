@@ -1,4 +1,4 @@
-
+#include <Kuru.h>
 using namespace KR;
 struct Cuboid{
         float lenght;

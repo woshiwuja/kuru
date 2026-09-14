@@ -30,6 +30,7 @@ int main()
 		app.addPlugin(std::make_unique<UiPlugin>());
 		app.addPlugin(std::make_unique<MapPlugin>());
 		app.addPlugin(std::make_unique<NavigationPlugin>());
+		app.addPlugin(std::make_unique<CharacterPlugin>());
 		app.init();
 		app.run();
 		app.end();

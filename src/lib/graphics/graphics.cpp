@@ -39,11 +39,6 @@ void Graphics::createSwapChain(){
           pd.getSurfaceFormatsKHR(*surface);
       chooseSwapSurfaceFormat(availableFormats);
 
-      std::vector<vk::PresentModeKHR> availablePresentModes =
-          pd.getSurfacePresentModesKHR(*surface);
-      vk::PresentModeKHR presentMode =
-          chooseSwapPresentMode(availablePresentModes);
-
       vk::SwapchainCreateInfoKHR swapChainCreateInfo{
           .surface = *surface,
           .minImageCount = swapMinImageCount,
@@ -55,7 +50,9 @@ void Graphics::createSwapChain(){
           .imageSharingMode = vk::SharingMode::eExclusive,
           .preTransform = capabilities.currentTransform,
           .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-          .presentMode = presentMode,
+          // vsync: FIFO blocks on the refresh instead of throwing frames away
+          // like mailbox did, and it's the one mode the spec guarantees exists.
+          .presentMode = vk::PresentModeKHR::eFifo,
           .clipped = true};
 
       swapChain = vk::raii::SwapchainKHR(core->device->device, swapChainCreateInfo);
@@ -114,19 +111,6 @@ void Graphics::chooseSwapSurfaceFormat(
     } else {
       swapChainSurfaceFormat = availableFormats[0];
     }
-}
-
-vk::PresentModeKHR Graphics::chooseSwapPresentMode(
-      std::vector<vk::PresentModeKHR> const &availablePresentModes) {
-    assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) {
-      return presentMode == vk::PresentModeKHR::eFifo;
-    }));
-    return std::ranges::any_of(availablePresentModes,
-                               [](const vk::PresentModeKHR value) {
-                                 return vk::PresentModeKHR::eMailbox == value;
-                               })
-               ? vk::PresentModeKHR::eMailbox
-               : vk::PresentModeKHR::eFifo;
 }
 
 void Graphics::createDepthResources() {

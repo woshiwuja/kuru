@@ -13,3 +13,5 @@
 #include "event/event.hpp"
 #include "device/device.hpp"
 #include "debug/debug.hpp"
+#include "entt/entt.hpp"
+#include "SDL3/SDL.h"

@@ -15,30 +15,16 @@
 
 using namespace KR;
 
-// Un solo flag: qui non c'e' acqua, erba o porte, quindi ogni poly camminabile
-// vale 1 e il filtro include 1. ponytail: la tassonomia SAMPLE_POLYAREA_* del
-// demo serve quando i tipi di terreno costano diversamente.
 constexpr unsigned short NAV_POLY_WALK = 1;
 
-// Passi numerati dentro build(): il worker li conta, la UI ci fa la barra.
 constexpr int NAV_BUILD_STEPS = 6;
 
-// Geometria dell'overlay prima di finire sulla GPU. Si costruisce nel thread
-// di build, si carica nel main: Mesh::upload registra un command buffer e lo
-// invia sulla coda di Core, che non e' sincronizzata.
 struct DebugGeom {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
 };
 
-// Tutto in unita' mondo (metri). I valori in voxel li ricava buildNavMesh
-// dividendo per cellSize/cellHeight, come Sample_SoloMesh::handleBuild:
-// mescolare le due unita' e' l'errore classico di Recast. Default del
-// RecastDemo.
 struct NavConfig {
-  // Attenzione alla scala: la mappa e' 1000x, quindi a 0.3 il grid e'
-  // 3333x3333 e il watershed ci mette minuti. Il pannello mostra quanto ha
-  // impiegato l'ultimo build.
   float cellSize = 0.3f;
   float cellHeight = 0.2f;
   float agentHeight = 2.0f;
@@ -58,8 +44,6 @@ struct NavConfig {
   float debugOffsetY = 0.1f;
 };
 
-// Possiede i tre oggetti Detour. Non copiabile: una copia raddoppierebbe le
-// free nel distruttore.
 struct NavMap {
   dtNavMesh *mesh = nullptr;
   dtNavMeshQuery *query = nullptr;
@@ -73,9 +57,6 @@ struct NavMap {
     o.query = nullptr;
     o.crowd = nullptr;
   }
-  // Lets loadNavMesh() build into a scratch NavMap and, only once every step
-  // succeeds, swap it into the ctx-owned one - a failure partway through just
-  // destroys the scratch copy instead of leaving the real one half-built.
   NavMap &operator=(NavMap &&o) noexcept {
     if (this != &o) {
       dtFreeCrowd(crowd);

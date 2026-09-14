@@ -16,10 +16,10 @@ struct MeshLoader {
   result_type operator()(const std::string &path) const {
     // Magic path instead of a file: lets spawn()/getMesh() hand out a
     // procedural sphere through the same cache as everything else.
-    if (path == "primitive:sphere") {
+    if (path == cube) {
       //return createSphere();
     }
-    if (path == "primitive:cube") {
+    if (path == sphere) {
       //return createCube();
     }
     return loadModel(path);

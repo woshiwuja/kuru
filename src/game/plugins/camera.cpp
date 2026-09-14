@@ -1,8 +1,14 @@
 #include "camera.hpp"
 #include <Kuru.h>
+#include "SDL3/SDL_mouse.h"
 #include "entt/entity/fwd.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <iostream>
+#include "physics.hpp" // glmVecToJPH
 
 using namespace KR;
 
@@ -40,10 +46,18 @@ void Camera::control(FrameContext &frame){
     const auto *core = Core::get();
     const auto &input = *core->eventManager;
     const float deltaTime = core->deltaTime;
-    if (input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse) {
+    const bool orbiting =
+        input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse;
+    if (orbiting) {
       yaw += input.mouseDeltaX * orbitSensitivity;
       pitch -= input.mouseDeltaY * orbitSensitivity;
     }
+    // Relative mode rather than SDL_HideCursor: imgui's SDL3 backend re-shows
+    // the cursor from its NewFrame every time its own cursor shape changes, and
+    // winning that fight only on some frames is what made the pointer blink
+    // back mid-orbit. This also pins the pointer, so a long drag no longer
+    // walks it off to the screen edge.
+    SDL_SetWindowRelativeMouseMode(core->window->window, orbiting);
     const bool keyboardFree = !frame.uiCapturesKeyboard;
     if (keyboardFree && input.down(SDL_SCANCODE_Q)) {
       yaw -= turnSpeed * deltaTime;
@@ -91,7 +105,21 @@ void Camera::control(FrameContext &frame){
                                      0, 0, -1, 0,
                                      0, 0, 1, 1);
     frame.proj = REVERSE_Z * frame.proj;
+    if (input.down(SDL_BUTTON_LEFT) && !frame.uiCapturesMouse) {
+      // Window-relative pixels, top-left origin: what screenTarget() wants.
+      // EventManager only keeps deltas, so ask SDL for the position.
+      float mouseX = 0.0f;
+      float mouseY = 0.0f;
+      SDL_GetMouseState(&mouseX, &mouseY);
+      if (castRay(screenTarget(frame, {mouseX, mouseY}))) {
+          std::cout << "hit" << "\n";
+      }
+      else{
+          std::cout << "nohit" << "\n";
+      }
+    }
 };
+
 void CameraPlugin::UI(entt::registry &reg){
     using namespace ImGui;
     if (Begin("Cameras")) {
@@ -128,5 +156,33 @@ void CameraPlugin::UI(entt::registry &reg){
       }
     }
    End();
+}
+// Unprojects with skyRayProj - proj before the reversed-Z flip - so z=1 is the
+// far plane the way GLM_FORCE_DEPTH_ZERO_TO_ONE writes it, and the Y flip
+// already baked into that matrix is what makes SDL's top-left pixel origin land
+// the right way up.
+glm::vec3 Camera::screenTarget(const FrameContext &frame,
+                               glm::vec2 pixel) const {
+    const glm::vec4 ndc{2.0f * pixel.x / frame.extent.width - 1.0f,
+                        2.0f * pixel.y / frame.extent.height - 1.0f, 1.0f,
+                        1.0f};
+    const glm::vec4 world = glm::inverse(frame.skyRayProj * frame.view) * ndc;
+    return glm::vec3(world) / world.w;
+}
+
+bool Camera::castRay(glm::vec3 target) {
+    using namespace JPH;
+    const glm::vec3 eye = position();
+    // Jolt takes the direction unnormalized and treats it as the ray's full
+    // extent (mFraction runs 0..1 over it), so eye->target is the whole ray:
+    // nothing past the target can register, and there's no separate max
+    // distance to keep in sync. A unit direction would probe one world unit.
+    // RVec3, not Vec3: this build has JPH_DOUBLE_PRECISION on, so ray origins
+    // are double (the direction stays single).
+    const RRayCast ray{RVec3(glmVecToJPH(eye)), glmVecToJPH(target - eye)};
+
+    RayCastResult hit;
+    return Core::get()->physicsManager->system.GetNarrowPhaseQuery().CastRay(
+        ray, hit);
 }
 }

@@ -1,11 +1,9 @@
 #include "navigation.hpp"
-
 #include <Kuru.h>
 #include "map.hpp"
 #include "plugins.hpp"
 #include "render.hpp"
 #include "transform.hpp"
-
 #include <DetourAlloc.h>
 #include <DetourNavMeshBuilder.h>
 #include <Recast.h>
@@ -13,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <fstream>
 #include <imgui.h>
 #include <iostream>
 #include <memory>
@@ -69,6 +68,7 @@ template <typename T, void (*F)(T *)> struct RcOwn {
 // gira sul thread di build, quindi e' atomico.
 int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
           std::atomic<int> &progress) {
+  const auto start = std::chrono::high_resolution_clock::now();
   rcContext ctx;
 
   rcConfig cfg{};
@@ -183,8 +183,6 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
             << dmesh->ntris << " tris\n";
 
   progress = 6;
-  // 6. da Recast a Detour. Senza questi flag il filtro di query scarta tutto e
-  // ogni findNearestPoly torna 0.
   for (int i = 0; i < pmesh->npolys; ++i) {
     if (pmesh->areas[i] == RC_WALKABLE_AREA)
       pmesh->flags[i] = NAV_POLY_WALK;
@@ -251,10 +249,9 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   const auto elapsed = std::chrono::duration<float, std::milli>(
       std::chrono::high_resolution_clock::now() - start);
   std::cout << "navmesh: build done in " << elapsed.count() << "ms\n";
+  return pmesh->npolys;
 }
 
-// "models/testmap.glb" -> "models/testmap.bin" - next to the source model,
-// same folder, so it survives alongside whichever map is currently spawned.
 std::string navmeshCachePath(const std::string &modelPath) {
   const size_t dot = modelPath.find_last_of('.');
   const std::string stem =
@@ -262,9 +259,6 @@ std::string navmeshCachePath(const std::string &modelPath) {
   return stem + ".bin";
 }
 
-// Rebuilding from the header on: bumping this forces stale caches (from an
-// older Recast/Detour or a changed NavConfig) to rebuild instead of loading
-// mismatched data.
 constexpr uint32_t NAVMESH_CACHE_MAGIC = 0x4B564E4B;   // "KNVK"
 constexpr uint32_t NAVMESH_CACHE_VERSION = 1;
 struct NavMeshCacheHeader {
@@ -293,9 +287,6 @@ void saveNavMesh(const dtNavMesh &mesh, const std::string &path) {
             << "\n";
 }
 
-// Builds into a scratch NavMap and only swaps it into `nav` (via move-assign)
-// once every step succeeds - a bad/stale/truncated cache file falls through
-// to the caller's normal build() path instead of leaving `nav` half-set-up.
 bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
   std::ifstream file(path, std::ios::binary);
   if (!file) return false; // no cache yet, not an error
@@ -353,6 +344,8 @@ void NavigationPlugin::init(entt::registry &reg) {
   auto maps = reg.view<Map, MeshRef, Transform>();
   if (maps.begin() != maps.end()) {
     target = *maps.begin();
+  } else {
+    std::cout << "navmesh: no Map entity with a MeshRef found, skipping build\n";
   }
   rebuild(reg);
 }
@@ -371,7 +364,6 @@ void NavigationPlugin::start(entt::registry &reg) {
       clearDebug(reg);
     }
   }
-  std::cout << "navmesh: no Map entity with a MeshRef found, skipping build\n";
 }
 
 void NavigationPlugin::rebuild(entt::registry &reg) {
@@ -421,14 +413,12 @@ void NavigationPlugin::poll(entt::registry &reg) {
                          std::chrono::steady_clock::now() - buildStarted)
                          .count();
   try {
-    BuildResult out = pending.get(); // rilancia l'eccezione del worker
+    BuildResult out = pending.get();
     lastPolyCount = out.polyCount;
     reg.ctx().erase<NavMap>();
     reg.ctx().emplace<NavMap>(std::move(out.nav));
     spawnDebug(reg, out.debug);
   } catch (const std::exception &e) {
-    // Una NavMap a meta' e' peggio di nessuna: findNearestPoly su una query
-    // mancante sarebbe un crash, non un percorso vuoto.
     reg.ctx().erase<NavMap>();
     lastError = e.what();
   }
@@ -449,9 +439,6 @@ void NavigationPlugin::spawnDebug(entt::registry &reg, const DebugGeom &geom) {
 
   auto mesh = std::make_shared<Mesh>();
   mesh->upload(geom.vertices, geom.indices);
-  // Entita' a parte, non la mappa: quella ha gia' MeshRef e Renderable suoi.
-  // Transform identita', i vertici sono gia' in mondo. La texture non la
-  // campiona nessuno (params.x = 2), ma attach() ne pretende una.
   debugEntity = reg.create();
   renderer(reg).spawn(reg, debugEntity, std::move(mesh), getTexture(reg, ""),
                       {2.0f, config.debugAlpha, 0.0f, 0.0f});
@@ -491,8 +478,6 @@ void NavigationPlugin::UI(entt::registry &reg) {
 
     SeparatorText("voxel");
     DragFloat("cell size", &config.cellSize, 0.05f, 0.01f, 100.0f);
-    SetItemTooltip("Mondo diviso per questo: la mappa e' scalata 1000x, "
-                   "scendere sotto l'unita' vuol dire minuti di build.");
     DragFloat("cell height", &config.cellHeight, 0.05f, 0.01f, 100.0f);
 
     SeparatorText("regioni");

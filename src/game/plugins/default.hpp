@@ -26,6 +26,7 @@ struct DefaultPlugin : public Plugin {
     reg.emplace<Character>(e);
     reg.emplace<FirstName>(e, "coglione");
     reg.emplace<LastName>(e, "culone");
+    reg.emplace<Strength>(e,Strength{{.lvl = 1, .currentExp = 0,  .expToNext = 100}});
     auto &t = reg.emplace<Transform>(e);
     t.position = glm::vec3{0, 4000, 0};
     t.rotation = glm::quat(glm::vec3{0.7, 0.7, 0}); // da euler radianti

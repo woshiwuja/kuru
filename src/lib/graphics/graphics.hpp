@@ -28,8 +28,6 @@ struct Graphics {
   void chooseSwapMinImageCount();
   void chooseSwapSurfaceFormat(
       const std::vector<vk::SurfaceFormatKHR> &availableFormats);
-  vk::PresentModeKHR chooseSwapPresentMode(
-      std::vector<vk::PresentModeKHR> const &availablePresentModes);
   void createDepthResources();
   vk::Format findSupportedFormat(const std::vector<vk::Format> &candidates,
                                  vk::ImageTiling tiling,

@@ -21,7 +21,7 @@ struct MapPlugin : public Plugin {
         auto &p = Core::get()->physicsManager;
         // Render Transform and the Jolt heightfield have to use the same
         // factor, or you fall through / stand on invisible ground.
-        constexpr float mapScale = 1000.0f;
+        constexpr float mapScale = 1.0f;
         const std::string mapPath = "models/testmap.glb";
         entt::entity mapEntity = reg.create();
 		spawn(reg, mapEntity, mapPath,
