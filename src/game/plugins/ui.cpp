@@ -3,9 +3,6 @@
 #include "camera.hpp"
 #include "lighting.hpp"
 #include "render.hpp"
-#include <imgui.h>
-#include <imgui_impl_sdl3.h>
-#include <imgui_impl_vulkan.h>
 
 using namespace KR;
 

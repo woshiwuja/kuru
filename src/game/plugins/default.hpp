@@ -7,8 +7,6 @@
 #include "entt/entity/fwd.hpp"
 #include "character.hpp"
 #include "glm/ext/vector_float3.hpp"
-#include "imgui.h"
-#include "misc/cpp/imgui_stdlib.h" // ImGui::InputText overload for std::string
 #include "plugins.hpp"
 #include "physics.hpp"
 #include "render.hpp"

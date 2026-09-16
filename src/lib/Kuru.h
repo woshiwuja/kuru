@@ -13,5 +13,10 @@
 #include "event/event.hpp"
 #include "device/device.hpp"
 #include "debug/debug.hpp"
-#include "entt/entt.hpp"
+#include <entt/entt.hpp>
+#include <glm/glm.hpp>
 #include "SDL3/SDL.h"
+#include "misc/cpp/imgui_stdlib.h" // ImGui::InputText overload for std::string
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_vulkan.h>

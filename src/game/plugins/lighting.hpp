@@ -3,7 +3,6 @@
 #include "entt/entity/fwd.hpp"
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
-#include <imgui.h>
 
 using namespace KR;
 
