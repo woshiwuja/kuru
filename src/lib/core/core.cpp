@@ -60,8 +60,6 @@ void Core::run() { mainLoop(); }
 
 void Core::end() {
   cleanup();
-  // SDL_Quit unloads the Vulkan loader, so every Vulkan object must already be
-  // gone: destroying one afterwards jumps through dangling function pointers.
   window->quit();
 }
 
@@ -76,12 +74,16 @@ void Core::initVulkan() {
   device->pickPhysicalDevice();
   std::cerr << "[debug] initVulkan: device->createLogicalDevice\n" << std::flush;
   device->createLogicalDevice();
+  std::cerr << "[debug] initVulkan: graphics->chooseMsaaSamples\n" << std::flush;
+  graphics->chooseMsaaSamples();
   std::cerr << "[debug] initVulkan: graphics->createSwapChain\n" << std::flush;
   graphics->createSwapChain();
   std::cerr << "[debug] initVulkan: graphics->createImageViews\n" << std::flush;
   graphics->createImageViews();
   std::cerr << "[debug] initVulkan: device->createCommandPool\n" << std::flush;
   device->createCommandPool();
+  std::cerr << "[debug] initVulkan: graphics->createColorResources\n" << std::flush;
+  graphics->createColorResources();
   std::cerr << "[debug] initVulkan: graphics->createDepthResources\n" << std::flush;
   graphics->createDepthResources();
   std::cerr << "[debug] initVulkan: graphics->createTextureSampler\n" << std::flush;
@@ -118,9 +120,6 @@ void Core::mainLoop() {
 
 void Core::cleanup() {
   device->wait();
-  // Destroy the whole registry, not just the entities: the mesh and texture
-  // caches live in reg.ctx(), which reg.clear() leaves alone, and they hold
-  // buffers and images that must go while the device is still around.
   reg = entt::registry{};
   plugins.clear();
   sync = nullptr;
@@ -202,10 +201,30 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
                             vk::PipelineStageFlagBits2::eLateFragmentTests,
                         vk::ImageAspectFlagBits::eDepth);
 
+  const bool msaa = graphics->msaaSamples != vk::SampleCountFlagBits::e1;
+  if (msaa) {
+    transitionImageLayout(
+        commandBuffer, *graphics->colorImage, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal, {},
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::ImageAspectFlagBits::eColor);
+  }
+
   vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+  // With MSAA the pass draws into the multisample image and resolves into the
+  // swapchain image on endRendering; without it, straight into the swapchain.
   vk::RenderingAttachmentInfo attachmentInfo = {
-      .imageView = *graphics->swapChainImageViews[imageIndex],
+      .imageView = msaa ? *graphics->colorImageView
+                        : *graphics->swapChainImageViews[imageIndex],
       .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+      .resolveMode = msaa ? vk::ResolveModeFlagBits::eAverage
+                          : vk::ResolveModeFlagBits::eNone,
+      .resolveImageView =
+          msaa ? *graphics->swapChainImageViews[imageIndex] : nullptr,
+      .resolveImageLayout = msaa ? vk::ImageLayout::eColorAttachmentOptimal
+                                 : vk::ImageLayout::eUndefined,
       .loadOp = vk::AttachmentLoadOp::eClear,
       .storeOp = vk::AttachmentStoreOp::eStore,
       .clearValue = clearColor};

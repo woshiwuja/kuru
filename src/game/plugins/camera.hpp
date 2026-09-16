@@ -29,11 +29,6 @@ namespace KR{
 	[[nodiscard]] glm::vec3 position() const;
 
 	void control(FrameContext &frame);
-	bool castRay(glm::vec3 target);
-	// Window pixel (SDL's top-left origin) -> the world point on the far plane
-	// under it, ready to hand straight to castRay().
-	[[nodiscard]] glm::vec3 screenTarget(const FrameContext &frame,
-	                                     glm::vec2 pixel) const;
     };
 
     struct MainCamera {};

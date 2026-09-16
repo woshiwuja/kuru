@@ -1,33 +1,31 @@
+#pragma once
 #include "camera.hpp"
 #include "character.hpp"
 #include <Kuru.h>
 #include "physics.hpp"
 #include "transform.hpp"
-
+#include "raycast.hpp"
 #include "entt/entity/fwd.hpp"
+#include <iostream>
 
 using namespace KR;
-//entt::entity pick(entt::registry& reg, const JPH::RRayCast& r) {
-//    entt::entity best = entt::null;
-//    float bestT = INFINITY;
-//
-//    for (auto [e, xf, b] : reg.view<Transform, Bounds>().each()) {
-//        float t = rayAabb(toObject(r, glm::inverse(xf.model)), b.lo, b.hi);
-//        if (t >= 0.f && t < bestT) { bestT = t; best = e; }
-//    }
-//
-//    // Closest collider wins; non-selectable closest => occluded, nothing picked.
-//    return (best != entt::null ) ? best : entt::null;
-//}
 struct CharacterControllerPlugin : public Plugin{
     void init(entt::registry &r) override {
     }
     void update(entt::registry &r ) override {
         const auto &input = *Core::get()->eventManager;
-        if (input.down(SDL_BUTTON_LEFT)) {
-            for(auto [e,camera] : r.view<Camera, MainCamera>().each()){
-                //JPH::RRayCast ray{JPH::RVec3(glmVecToJPH(camera.position()), dir * kPickRange};
-                //pick(reg,ray );
+        const auto &frame = r.ctx().get<FrameContext>();
+        if (!input.down(SDL_BUTTON_LEFT) || frame.uiCapturesMouse) {
+            return;
+        }
+        float mouseX = 0.0f;
+        float mouseY = 0.0f;
+        SDL_GetMouseState(&mouseX, &mouseY);
+        for(auto [e,camera] : r.view<Camera, MainCamera>().each()){
+            if (castRay(camera.position(), screenTarget(frame, {mouseX, mouseY}))) {
+                std::cout << "hit\n";
+            } else {
+                std::cout << "nohit\n";
             }
         }
     }

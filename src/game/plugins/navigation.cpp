@@ -1,6 +1,9 @@
 #include "navigation.hpp"
 #include <Kuru.h>
+#include "camera.hpp"
+#include "core/core.hpp"
 #include "map.hpp"
+#include "plugin/plugin.hpp"
 #include "plugins.hpp"
 #include "render.hpp"
 #include "transform.hpp"
@@ -72,7 +75,15 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   rcContext ctx;
 
   rcConfig cfg{};
-  cfg.ch = c.cellHeight;
+  const float spanY = geom.bmax[1] - geom.bmin[1];
+  const float minCellHeight = spanY / RC_SPAN_MAX_HEIGHT;
+  cfg.ch = std::max(c.cellHeight, minCellHeight);
+  if (cfg.ch > c.cellHeight) {
+    std::cout << "Navmesh: terrain is " << spanY << " units tall, past what "
+              << "cellHeight " << c.cellHeight << " can address ("
+              << RC_SPAN_MAX_HEIGHT * c.cellHeight << "); using " << cfg.ch
+              << " instead\n";
+  }
   // rcBuildCompactHeightfield allocates width*height cells up front (plus a
   // comparably sized spans array) - a cs tuned for a human-scale test level
   // (RecastDemo's default 0.3) blows past any sane memory budget on a terrain
@@ -218,9 +229,9 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
     // I suoi due modi di fallire si distinguono solo dai conteggi: nessun
     // triangolo camminabile (mesh capovolta, slope, erosione) o una tile sola
     // che non basta piu'.
-    throw std::runtime_error("dtCreateNavMeshData fallita: " +
-                             std::to_string(pmesh->nverts) + " verts, " +
-                             std::to_string(pmesh->npolys) + " polys");
+    throw std::runtime_error(
+        "dtCreateNavMeshData fallita: " + std::to_string(pmesh->nverts) +
+        " verts, " + std::to_string(pmesh->npolys) + " polys");
   }
   std::cout << "navmesh: detour data " << navDataSize << " bytes\n";
 
@@ -259,7 +270,7 @@ std::string navmeshCachePath(const std::string &modelPath) {
   return stem + ".bin";
 }
 
-constexpr uint32_t NAVMESH_CACHE_MAGIC = 0x4B564E4B;   // "KNVK"
+constexpr uint32_t NAVMESH_CACHE_MAGIC = 0x4B564E4B; // "KNVK"
 constexpr uint32_t NAVMESH_CACHE_VERSION = 1;
 struct NavMeshCacheHeader {
   uint32_t magic;
@@ -272,7 +283,8 @@ struct NavMeshCacheHeader {
 // blob back, nothing else to serialize.
 void saveNavMesh(const dtNavMesh &mesh, const std::string &path) {
   const dtMeshTile *tile = mesh.getTile(0);
-  if (tile == nullptr || tile->data == nullptr) return;
+  if (tile == nullptr || tile->data == nullptr)
+    return;
 
   std::ofstream file(path, std::ios::binary | std::ios::trunc);
   if (!file) {
@@ -289,7 +301,8 @@ void saveNavMesh(const dtNavMesh &mesh, const std::string &path) {
 
 bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
   std::ifstream file(path, std::ios::binary);
-  if (!file) return false; // no cache yet, not an error
+  if (!file)
+    return false; // no cache yet, not an error
 
   NavMeshCacheHeader header{};
   file.read(reinterpret_cast<char *>(&header), sizeof(header));
@@ -302,7 +315,8 @@ bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
 
   auto *navData =
       static_cast<unsigned char *>(dtAlloc(header.dataSize, DT_ALLOC_PERM));
-  if (navData == nullptr) return false;
+  if (navData == nullptr)
+    return false;
   file.read(reinterpret_cast<char *>(navData), header.dataSize);
   if (!file) {
     dtFree(navData);
@@ -315,8 +329,8 @@ bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
   // DT_TILE_FREE_DATA: on success navData belongs to the navmesh now; on
   // failure init() never took it, so it's still ours to free.
   if (loaded.mesh == nullptr ||
-      dtStatusFailed(loaded.mesh->init(navData, header.dataSize,
-                                       DT_TILE_FREE_DATA))) {
+      dtStatusFailed(
+          loaded.mesh->init(navData, header.dataSize, DT_TILE_FREE_DATA))) {
     dtFree(navData);
     return false;
   }
@@ -345,7 +359,8 @@ void NavigationPlugin::init(entt::registry &reg) {
   if (maps.begin() != maps.end()) {
     target = *maps.begin();
   } else {
-    std::cout << "navmesh: no Map entity with a MeshRef found, skipping build\n";
+    std::cout
+        << "navmesh: no Map entity with a MeshRef found, skipping build\n";
   }
   rebuild(reg);
 }
@@ -367,7 +382,8 @@ void NavigationPlugin::start(entt::registry &reg) {
 }
 
 void NavigationPlugin::rebuild(entt::registry &reg) {
-  if (pending.valid()) return; // uno alla volta
+  if (pending.valid())
+    return; // uno alla volta
 
   lastError.clear();
   lastBuildSeconds = 0.0f;
@@ -392,16 +408,14 @@ void NavigationPlugin::rebuild(entt::registry &reg) {
   const NavConfig cfg = config;
   buildPhase = 0;
   buildStarted = std::chrono::steady_clock::now();
-  pending = std::async(std::launch::async,
-                       [this, cfg, geom = std::move(geom)] {
-                         BuildResult out;
-                         out.polyCount = build(out.nav, cfg, geom, buildPhase);
-                         if (cfg.drawDebug) {
-                           out.debug = out.nav.debugGeometry(cfg.debugColor,
-                                                             cfg.debugOffsetY);
-                         }
-                         return out;
-                       });
+  pending = std::async(std::launch::async, [this, cfg, geom = std::move(geom)] {
+    BuildResult out;
+    out.polyCount = build(out.nav, cfg, geom, buildPhase);
+    if (cfg.drawDebug) {
+      out.debug = out.nav.debugGeometry(cfg.debugColor, cfg.debugOffsetY);
+    }
+    return out;
+  });
 }
 
 void NavigationPlugin::poll(entt::registry &reg) {
@@ -435,7 +449,8 @@ void NavigationPlugin::spawnDebug(entt::registry &reg) {
 
 void NavigationPlugin::spawnDebug(entt::registry &reg, const DebugGeom &geom) {
   clearDebug(reg);
-  if (geom.indices.empty()) return;
+  if (geom.indices.empty())
+    return;
 
   auto mesh = std::make_shared<Mesh>();
   mesh->upload(geom.vertices, geom.indices);
@@ -457,7 +472,8 @@ void NavigationPlugin::UI(entt::registry &reg) {
   using namespace ImGui;
   if (Begin("Navigation")) {
     const auto label = [&reg](entt::entity e) {
-      if (!reg.valid(e)) return std::string("<nessuna>");
+      if (!reg.valid(e))
+        return std::string("<nessuna>");
       return std::format("#{} - {} verts{}", entt::to_integral(e),
                          reg.get<MeshRef>(e).mesh->vertices.size(),
                          reg.all_of<Map>(e) ? " [map]" : "");
@@ -465,7 +481,8 @@ void NavigationPlugin::UI(entt::registry &reg) {
     if (BeginCombo("mesh", label(target).c_str())) {
       for (auto [e, meshRef, transform] :
            reg.view<MeshRef, Transform>(entt::exclude<DebugMesh>).each()) {
-        if (Selectable(label(e).c_str(), e == target)) target = e;
+        if (Selectable(label(e).c_str(), e == target))
+          target = e;
       }
       EndCombo();
     }

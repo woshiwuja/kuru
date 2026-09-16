@@ -1,3 +1,4 @@
+#pragma once
 #include "entt/entity/fwd.hpp"
 #include "plugin/plugin.hpp"
 #include <string>
