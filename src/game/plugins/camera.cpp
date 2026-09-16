@@ -144,12 +144,4 @@ void CameraPlugin::UI(entt::registry &reg){
     }
    End();
 }
-// Unprojects with skyRayProj - proj before the reversed-Z flip - so z=1 is the
-// far plane the way GLM_FORCE_DEPTH_ZERO_TO_ONE writes it, and the Y flip
-// already baked into that matrix is what makes SDL's top-left pixel origin land
-// the right way up.
-glm::vec3 Camera::screenTarget(const FrameContext &frame,
-                               glm::vec2 pixel) const {
-}
-
 }
