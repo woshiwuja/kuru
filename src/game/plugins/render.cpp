@@ -81,7 +81,7 @@ void RenderPlugin::createGraphicsPipeline() {
       .depthBiasEnable = vk::False,
       .lineWidth = 1.0f};
   vk::PipelineMultisampleStateCreateInfo multisampling{
-      .rasterizationSamples = vk::SampleCountFlagBits::e1,
+      .rasterizationSamples = core->graphics->msaaSamples,
       .sampleShadingEnable = vk::False};
   vk::PipelineDepthStencilStateCreateInfo depthStencil{
       .depthTestEnable = vk::True,
@@ -233,7 +233,7 @@ void RenderPlugin::createSkyPipeline() {
       .depthBiasEnable = vk::False,
       .lineWidth = 1.0f};
   vk::PipelineMultisampleStateCreateInfo multisampling{
-      .rasterizationSamples = vk::SampleCountFlagBits::e1,
+      .rasterizationSamples = core->graphics->msaaSamples,
       .sampleShadingEnable = vk::False};
   // Off both ways: the sky must never occlude or be occluded by real geometry,
   // it only ever fills in pixels nothing else drew.

@@ -7,11 +7,6 @@
 
 using namespace KR;
 
-// ---- components -------------------------------------------------------------
-
-
-// Handles, not data: several entities share one asset and it dies with the last
-// of them.
 struct MeshRef {
 	std::shared_ptr<Mesh> mesh;
 };

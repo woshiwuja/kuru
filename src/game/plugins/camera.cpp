@@ -105,19 +105,6 @@ void Camera::control(FrameContext &frame){
                                      0, 0, -1, 0,
                                      0, 0, 1, 1);
     frame.proj = REVERSE_Z * frame.proj;
-    if (input.down(SDL_BUTTON_LEFT) && !frame.uiCapturesMouse) {
-      // Window-relative pixels, top-left origin: what screenTarget() wants.
-      // EventManager only keeps deltas, so ask SDL for the position.
-      float mouseX = 0.0f;
-      float mouseY = 0.0f;
-      SDL_GetMouseState(&mouseX, &mouseY);
-      if (castRay(screenTarget(frame, {mouseX, mouseY}))) {
-          std::cout << "hit" << "\n";
-      }
-      else{
-          std::cout << "nohit" << "\n";
-      }
-    }
 };
 
 void CameraPlugin::UI(entt::registry &reg){
@@ -163,26 +150,6 @@ void CameraPlugin::UI(entt::registry &reg){
 // the right way up.
 glm::vec3 Camera::screenTarget(const FrameContext &frame,
                                glm::vec2 pixel) const {
-    const glm::vec4 ndc{2.0f * pixel.x / frame.extent.width - 1.0f,
-                        2.0f * pixel.y / frame.extent.height - 1.0f, 1.0f,
-                        1.0f};
-    const glm::vec4 world = glm::inverse(frame.skyRayProj * frame.view) * ndc;
-    return glm::vec3(world) / world.w;
 }
 
-bool Camera::castRay(glm::vec3 target) {
-    using namespace JPH;
-    const glm::vec3 eye = position();
-    // Jolt takes the direction unnormalized and treats it as the ray's full
-    // extent (mFraction runs 0..1 over it), so eye->target is the whole ray:
-    // nothing past the target can register, and there's no separate max
-    // distance to keep in sync. A unit direction would probe one world unit.
-    // RVec3, not Vec3: this build has JPH_DOUBLE_PRECISION on, so ray origins
-    // are double (the direction stays single).
-    const RRayCast ray{RVec3(glmVecToJPH(eye)), glmVecToJPH(target - eye)};
-
-    RayCastResult hit;
-    return Core::get()->physicsManager->system.GetNarrowPhaseQuery().CastRay(
-        ray, hit);
-}
 }

@@ -5,6 +5,7 @@
 // computes a different JPH_VERSION_ID than the one baked into Jolt.dll and
 // aborts with a version-mismatch assert on startup. It arrives transitively
 // from Jolt::Jolt when the build config enables it.
+#include "core/core.hpp"
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
@@ -23,6 +24,7 @@
 #include <Jolt/Renderer/DebugRenderer.h>
 #endif
 #include <optional>
+#include <core/core.hpp>
 
 namespace KR {
 
@@ -33,13 +35,6 @@ static constexpr JPH::BroadPhaseLayer BD_NON_MOVING(0);
 static constexpr JPH::BroadPhaseLayer BD_MOVING(1);
 static constexpr JPH::uint BD_NUM_LAYERS(2);
 
-#ifdef JPH_DEBUG_RENDERER
-class DebugRenderer : public JPH::DebugRenderer{
-        void DrawLine(JPH::RVec3Arg inFrom,JPH::RVec3Arg inTo, JPH::ColorArg inColor) {
-
-        };
-};
-#endif
 struct PhysicsManager {
   const JPH::uint maxBodies = 65535;
   const JPH::uint numBodyMutexes = 0; // 0 = let Jolt pick
@@ -53,8 +48,28 @@ struct PhysicsManager {
   std::optional<JPH::ObjectVsBroadPhaseLayerFilterTable> objVsBpLayers;
   JPH::PhysicsSystem system;
   JPH::BodyInterface &bodies() { return system.GetBodyInterface(); }
-  void init();
-  void update();
-  void stop();
+
+  void init() {
+    JPH::Factory::sInstance = new JPH::Factory();
+    JPH::RegisterTypes();
+
+    bpLayers.MapObjectToBroadPhaseLayer(NON_MOVING, BD_NON_MOVING);
+    bpLayers.MapObjectToBroadPhaseLayer(MOVING, BD_MOVING);
+    objectPairs.EnableCollision(MOVING, NON_MOVING);
+    objectPairs.EnableCollision(MOVING, MOVING);
+    objVsBpLayers.emplace(bpLayers, BD_NUM_LAYERS, objectPairs, NUM_LAYERS);
+    system.Init(maxBodies, numBodyMutexes, maxBodyPairs, maxContactConstraints,
+                bpLayers, *objVsBpLayers, objectPairs);
+  }
+
+  void update() {
+    system.Update(Core::get()->deltaTime, 1, &tempAllocator, &jobSystem);
+  }
+
+  void stop() {
+    JPH::UnregisterTypes();
+    delete JPH::Factory::sInstance;
+    JPH::Factory::sInstance = nullptr;
+  }
 };
 } // namespace KR

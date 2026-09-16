@@ -74,6 +74,7 @@ void Graphics::recreateSwapChain() {
     cleanupSwapChain();
     createSwapChain();
     createImageViews();
+    createColorResources();
     createDepthResources();
 }
 
@@ -116,13 +117,53 @@ void Graphics::chooseSwapSurfaceFormat(
 void Graphics::createDepthResources() {
     vk::Format depthFormat = findDepthFormat();
 
+    // Depth has to match the colour target's sample count, and it's never
+    // resolved: nothing reads it after the pass.
     createImage(swapChainExtent.width, swapChainExtent.height, depthFormat,
                 vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eDepthStencilAttachment,
                 vk::MemoryPropertyFlagBits::eDeviceLocal, depthImage,
-                depthImageMemory);
+                depthImageMemory, msaaSamples);
     depthImageView = createImageView(depthImage, depthFormat,
                                      vk::ImageAspectFlagBits::eDepth);
+}
+
+void Graphics::createColorResources() {
+    if (msaaSamples == vk::SampleCountFlagBits::e1) {
+      // Nothing to resolve from; the pass renders straight into the swapchain.
+      colorImageView = nullptr;
+      colorImage = nullptr;
+      colorImageMemory = nullptr;
+      return;
+    }
+    createImage(swapChainExtent.width, swapChainExtent.height,
+                swapChainSurfaceFormat.format, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, colorImage,
+                colorImageMemory, msaaSamples);
+    colorImageView = createImageView(colorImage, swapChainSurfaceFormat.format,
+                                     vk::ImageAspectFlagBits::eColor);
+}
+
+void Graphics::chooseMsaaSamples() {
+    const auto &core = Core::Core::get();
+    const vk::PhysicalDeviceLimits &limits =
+        core->device->physicalDevice.getProperties().limits;
+    // Colour and depth are attachments in the same pass, so only counts both
+    // support are usable.
+    const vk::SampleCountFlags supported = limits.framebufferColorSampleCounts &
+                                           limits.framebufferDepthSampleCounts;
+
+    msaaSamples = vk::SampleCountFlagBits::e1;
+    for (const auto bit : {vk::SampleCountFlagBits::e2,
+                           vk::SampleCountFlagBits::e4,
+                           vk::SampleCountFlagBits::e8,
+                           vk::SampleCountFlagBits::e16}) {
+      const auto count = static_cast<uint32_t>(bit);
+      if (count <= requestedMsaa && (supported & bit)) {
+        msaaSamples = bit;
+      }
+    }
 }
 
 vk::Format Graphics::findSupportedFormat(const std::vector<vk::Format> &candidates,
@@ -157,14 +198,18 @@ vk::Format Graphics::findDepthFormat() const {
 void Graphics::createImage(uint32_t width, uint32_t height, vk::Format format,
                    vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                    vk::MemoryPropertyFlags properties, vk::raii::Image &image,
-                   vk::raii::DeviceMemory &imageMemory) {
+                   vk::raii::DeviceMemory &imageMemory,
+                   vk::SampleCountFlagBits samples) {
     const auto& core = Core::Core::get();
+    // Defaults to e1 on purpose: every texture goes through here, and a
+    // multisampled image can be neither copied into nor sampled by a shader.
+    // Only the attachments this file creates ever ask for more.
     vk::ImageCreateInfo imageInfo{.imageType = vk::ImageType::e2D,
                                   .format = format,
                                   .extent = {width, height, 1},
                                   .mipLevels = 1,
                                   .arrayLayers = 1,
-                                  .samples = vk::SampleCountFlagBits::e1,
+                                  .samples = samples,
                                   .tiling = tiling,
                                   .usage = usage,
                                   .sharingMode = vk::SharingMode::eExclusive,

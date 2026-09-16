@@ -53,6 +53,8 @@ void UiPlugin::init(entt::registry &reg) {
   info.ImageCount =
       static_cast<uint32_t>(core->graphics->swapChainImages.size());
   info.UseDynamicRendering = true;
+  info.PipelineInfoMain.MSAASamples =
+      static_cast<VkSampleCountFlagBits>(core->graphics->msaaSamples);
   info.PipelineInfoMain.PipelineRenderingCreateInfo = renderingInfo;
   info.CheckVkResultFn = checkVkResult;
 
