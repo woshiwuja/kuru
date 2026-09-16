@@ -135,9 +135,14 @@ set(IMGUI_SRC
 # The engine (namespace KR), consumed through src/lib/Kuru.h.
 # WINDOWS_EXPORT_ALL_SYMBOLS: no per-symbol __declspec sprinkling; CMake writes
 # the .def. It only covers functions, so the library exposes no extern data.
-add_library(KuruLib SHARED ${KURU_LIB_SRC})
+# imgui lives here, not in the exe: Core owns the context and the two backends
+# (core.cpp initGui/shutdownGui), and debug.hpp's GuiErrorMessage is an engine
+# header. The exe only calls the ImGui:: functions, which the .def exports;
+# nothing on that side touches GImGui, so there is no cross-DLL global to share.
+add_library(KuruLib SHARED ${KURU_LIB_SRC} ${IMGUI_SRC})
 set_target_properties(KuruLib PROPERTIES OUTPUT_NAME Kuru WINDOWS_EXPORT_ALL_SYMBOLS ON)
-target_include_directories(KuruLib PUBLIC src/lib)
+# PUBLIC: debug.hpp includes imgui.h and Kuru.h includes debug.hpp.
+target_include_directories(KuruLib PUBLIC src/lib ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 # PUBLIC: these all appear in Kuru.h's own headers, so consumers need them too.
 # Jolt and SDL3 build shared (see the FetchContent_Declare comments above) so
 # there is exactly one instance of each process-wide, even though both
@@ -152,11 +157,10 @@ target_compile_definitions(KuruLib
   PUBLIC VULKAN_HPP_NO_STRUCT_CONSTRUCTORS GLM_FORCE_DEPTH_ZERO_TO_ONE
   PRIVATE TINYGLTF_IMPLEMENTATION STB_IMAGE_IMPLEMENTATION)
 
-add_executable(Kuru ${KURU_GAME_SRC} ${IMGUI_SRC})
+add_executable(Kuru ${KURU_GAME_SRC})
 target_link_libraries(Kuru PRIVATE KuruLib
   RecastNavigation::Recast RecastNavigation::Detour
   RecastNavigation::DetourCrowd RecastNavigation::DetourTileCache RecastNavigation::DebugUtils)
-target_include_directories(Kuru PRIVATE ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 if(MSVC)
   # clang-cl/cl.exe default to exceptions off; Kuru's error paths (and tinygltf/nlohmann json) use throw/try.
   # PRIVATE: Jolt's own CMakeLists disables exceptions for itself and must not see this.

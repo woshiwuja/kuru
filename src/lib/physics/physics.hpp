@@ -5,7 +5,6 @@
 // computes a different JPH_VERSION_ID than the one baked into Jolt.dll and
 // aborts with a version-mismatch assert on startup. It arrives transitively
 // from Jolt::Jolt when the build config enables it.
-#include "core/core.hpp"
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
@@ -24,7 +23,6 @@
 #include <Jolt/Renderer/DebugRenderer.h>
 #endif
 #include <optional>
-#include <core/core.hpp>
 
 namespace KR {
 
@@ -62,8 +60,8 @@ struct PhysicsManager {
                 bpLayers, *objVsBpLayers, objectPairs);
   }
 
-  void update() {
-    system.Update(Core::get()->deltaTime, 1, &tempAllocator, &jobSystem);
+  void update(float deltaTime) {
+    system.Update(deltaTime, 1, &tempAllocator, &jobSystem);
   }
 
   void stop() {

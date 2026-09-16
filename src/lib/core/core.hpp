@@ -66,6 +66,8 @@ struct Core {
   void initVulkan();
   void initECS();
   void initPhysics();
+  void initGui();
+  void shutdownGui();
   void mainLoop();
   void cleanup();
   void createInstance();

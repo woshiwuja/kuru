@@ -1,13 +1,25 @@
 #include "core.hpp"
+#include "../debug/debug.hpp"
 #include "../image/image.hpp"
 #include "physics/physics.hpp"
 #include <SDL3/SDL_vulkan.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_vulkan.h>
 #include <cassert>
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <memory>
 #include <typeinfo>
+
+namespace {
+void checkVkResult(VkResult result) {
+  if (result != VK_SUCCESS) {
+    throw std::runtime_error("imgui vulkan backend: VkResult " +
+                             std::to_string(static_cast<int>(result)));
+  }
+}
+} // namespace
 
 namespace KR {
 
@@ -48,6 +60,8 @@ Core *Core::get() {
 void Core::init() {
   std::cerr << "[debug] Core::init: initVulkan\n" << std::flush;
   initVulkan();
+  std::cerr << "[debug] Core::init: initGui\n" << std::flush;
+  initGui();
   std::cerr << "[debug] Core::init: initPhysics\n" << std::flush;
   initPhysics();
   std::cerr << "[debug] Core::init: initECS\n" << std::flush;
@@ -100,6 +114,50 @@ void Core::addPlugin(std::unique_ptr<Plugin> plugin) {
 }
 void Core::initPhysics() { physicsManager->init(); };
 
+void Core::initGui() {
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGui::StyleColorsDark();
+
+  ImGui_ImplSDL3_InitForVulkan(window->window);
+
+  VkFormat colorFormat =
+      static_cast<VkFormat>(graphics->swapChainSurfaceFormat.format);
+  VkPipelineRenderingCreateInfo renderingInfo{
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+      .colorAttachmentCount = 1,
+      .pColorAttachmentFormats = &colorFormat,
+      .depthAttachmentFormat =
+          static_cast<VkFormat>(graphics->findDepthFormat())};
+
+  ImGui_ImplVulkan_InitInfo info{};
+  info.ApiVersion = VK_API_VERSION_1_3;
+  info.Instance = *instance;
+  info.PhysicalDevice = *device->physicalDevice;
+  info.Device = *device->device;
+  info.QueueFamily = device->queueIndex;
+  info.Queue = *device->queue;
+  info.DescriptorPoolSize = 16;
+  info.MinImageCount = graphics->swapMinImageCount;
+  info.ImageCount = static_cast<uint32_t>(graphics->swapChainImages.size());
+  info.UseDynamicRendering = true;
+  info.PipelineInfoMain.MSAASamples =
+      static_cast<VkSampleCountFlagBits>(graphics->msaaSamples);
+  info.PipelineInfoMain.PipelineRenderingCreateInfo = renderingInfo;
+  info.CheckVkResultFn = checkVkResult;
+
+  if (!ImGui_ImplVulkan_Init(&info)) {
+    throw std::runtime_error("failed to initialise the imgui vulkan backend");
+  }
+}
+
+void Core::shutdownGui() {
+  ImGui_ImplVulkan_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
+  ImGui::DestroyContext();
+}
+
 void Core::initECS() {
   reg.ctx().emplace<FrameContext>();
   for (auto &plugin : plugins) {
@@ -122,6 +180,7 @@ void Core::cleanup() {
   device->wait();
   reg = entt::registry{};
   plugins.clear();
+  shutdownGui();
   sync = nullptr;
   commandBuffers.clear();
   graphics = nullptr;

@@ -30,7 +30,7 @@ struct PhysicsPlugin : public Plugin {
           e, bodies.CreateAndAddBody(settings, JPH::EActivation::Activate));
       reg.erase<JPH::BodyCreationSettings>(e);
     }
-    physics->update();
+    physics->update(Core::get()->deltaTime);
     for (auto [e, t, id] : reg.view<Transform, JPH::BodyID>().each()) {
       if (!bodies.IsActive(id))
         continue;
