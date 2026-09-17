@@ -22,8 +22,7 @@ namespace KR {
                   bpLayers, *objVsBpLayers, objectPairs);
       std::cerr << "[debug] PhysicsManager::init: done\n" << std::flush;
     }
-    void PhysicsManager::update() {
-          auto dt = Core::get()->deltaTime;
+    void PhysicsManager::update(float dt) {
           system.Update(dt, 1, &tempAllocator, &jobSystem);
         }
     void PhysicsManager::stop(){

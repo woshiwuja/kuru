@@ -1,13 +1,15 @@
 #include "ui.hpp"
 #include <Kuru.h>
 #include "camera.hpp"
+#include "entt/entity/fwd.hpp"
 #include "lighting.hpp"
 #include "render.hpp"
 
 using namespace KR;
 
 
-void UiPlugin::start(entt::registry &reg) {
+void UIPlugin::init(entt::registry &reg){}
+void UIPlugin::start(entt::registry &reg) {
   for (const SDL_Event &event : Core::get()->eventManager->events) {
     ImGui_ImplSDL3_ProcessEvent(&event);
   }
@@ -20,7 +22,7 @@ void UiPlugin::start(entt::registry &reg) {
                                ImGuiDockNodeFlags_PassthruCentralNode);
 }
 
-void UiPlugin::end(entt::registry &reg) {
+void UIPlugin::end(entt::registry &reg) {
   auto &frame = reg.ctx().get<FrameContext>();
 
   ImGui::Render();
@@ -31,7 +33,7 @@ void UiPlugin::end(entt::registry &reg) {
   frame.uiCapturesKeyboard = io.WantCaptureKeyboard;
 }
 
-void UiPlugin::update(entt::registry &reg) {
+void UIPlugin::update(entt::registry &reg) {
   const auto *core = Core::get();
   ImGui::ShowDemoWindow();
   //ImGui::ShowStyleEditor();

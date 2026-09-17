@@ -4,8 +4,7 @@
 
 using namespace KR;
 
-struct UiPlugin : public Plugin {
-	~UiPlugin() override;
+struct UIPlugin : public Plugin {
 	void init(entt::registry &reg) override;
 	void start(entt::registry &reg) override;
 	void update(entt::registry &reg) override;

@@ -28,7 +28,7 @@ int main()
 		app.addPlugin(std::make_unique<RenderPlugin>());
 		app.addPlugin(std::make_unique<TransformPlugin>());
 		app.addPlugin(std::make_unique<DefaultPlugin>());
-		app.addPlugin(std::make_unique<UiPlugin>());
+		app.addPlugin(std::make_unique<UIPlugin>());
 		app.addPlugin(std::make_unique<MapPlugin>());
 		app.addPlugin(std::make_unique<NavigationPlugin>());
 		app.addPlugin(std::make_unique<CharacterPlugin>());

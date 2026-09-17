@@ -27,7 +27,6 @@ struct FrameContext {
 struct Plugin {
 	virtual ~Plugin() = default;
 
-	// Once, after the device exists.
 	virtual void init(entt::registry &reg) {}
 	virtual void start(entt::registry &reg) {}
 	virtual void update(entt::registry &reg) {}

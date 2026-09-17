@@ -47,27 +47,8 @@ struct PhysicsManager {
   JPH::PhysicsSystem system;
   JPH::BodyInterface &bodies() { return system.GetBodyInterface(); }
 
-  void init() {
-    JPH::Factory::sInstance = new JPH::Factory();
-    JPH::RegisterTypes();
-
-    bpLayers.MapObjectToBroadPhaseLayer(NON_MOVING, BD_NON_MOVING);
-    bpLayers.MapObjectToBroadPhaseLayer(MOVING, BD_MOVING);
-    objectPairs.EnableCollision(MOVING, NON_MOVING);
-    objectPairs.EnableCollision(MOVING, MOVING);
-    objVsBpLayers.emplace(bpLayers, BD_NUM_LAYERS, objectPairs, NUM_LAYERS);
-    system.Init(maxBodies, numBodyMutexes, maxBodyPairs, maxContactConstraints,
-                bpLayers, *objVsBpLayers, objectPairs);
-  }
-
-  void update(float deltaTime) {
-    system.Update(deltaTime, 1, &tempAllocator, &jobSystem);
-  }
-
-  void stop() {
-    JPH::UnregisterTypes();
-    delete JPH::Factory::sInstance;
-    JPH::Factory::sInstance = nullptr;
-  }
+  void init();
+  void update(float deltaTime);
+  void stop();
 };
 } // namespace KR
