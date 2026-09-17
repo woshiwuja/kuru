@@ -1,5 +1,4 @@
 #include "physics.hpp"
-#include "../core/core.hpp"
 #include <iostream>
 namespace KR {
     void PhysicsManager::init() {

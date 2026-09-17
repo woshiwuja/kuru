@@ -64,11 +64,18 @@ void Graphics::cleanupSwapChain() {
 }
 
 void Graphics::recreateSwapChain() {
-    int width = 0, height = 0;
     const auto& core = Core::Core::get();
-    SDL_GetWindowSizeInPixels(core->window->window, &width, &height);
-    while (width == 0 || height == 0) {
-      SDL_GetWindowSizeInPixels(core->window->window, &width, &height);
+    auto pd = core->device->physicalDevice;
+    // SDL_GetWindowSizeInPixels reports the size the window will be restored
+    // to while minimized, not 0x0, so it can't detect this case - poll the
+    // surface capabilities themselves (what the driver reports as currentExtent
+    // for a minimized/zero-area window) and pump events so the OS doesn't
+    // consider the app hung and so a restore/quit while waiting is seen.
+    auto caps = pd.getSurfaceCapabilitiesKHR(*surface);
+    while (caps.currentExtent.width == 0 || caps.currentExtent.height == 0) {
+      core->eventManager->pump();
+      if (core->eventManager->quit) return;
+      caps = pd.getSurfaceCapabilitiesKHR(*surface);
     }
     core->device->wait();
     cleanupSwapChain();
