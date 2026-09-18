@@ -1,0 +1,51 @@
+﻿[Arrow]
+Path=Dim Nitro Green Normal select.cur
+
+[Help]
+Path=Dim Nitro Green Help.ani
+
+[AppStarting]
+Path=Dim Nitro Green Working in Background.ani
+
+[Wait]
+Path=Dim Nitro Green Busy.ani
+
+[Crosshair]
+Path=Dim Nitro Green Pecision Select.ani
+
+[IBeam]
+Path=Dim Nitro Green Text Select.ani
+
+[NWPen]
+Path=Dim Nitro Green Handwriting.ani
+
+[No]
+Path=Dim Nitro Green Unavailable.ani
+
+[SizeNS]
+Path=Dim Nitro Green Vertical Resize.ani
+
+[SizeWE]
+Path=Dim Nitro Green Horizintal Resize.ani
+
+[SizeNWSE]
+Path=Dim Nitro Green Diagonal Resize 1.ani
+
+[SizeNESW]
+Path=Dim Nitro Green Diagonal Resize 2.ani
+
+[SizeAll]
+Path=Dim Nitro Green Move.ani
+
+[UpArrow]
+Path=Dim Nitro Green Alternate Select.ani
+
+[Hand]
+Path=Dim Nitro Green Link Select.ani
+
+[Pin]
+Path=Dim Nitro Green Location Select.ani
+
+[Person]
+Path=Dim Nitro Green Person Select.ani
+
