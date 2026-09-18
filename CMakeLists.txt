@@ -85,6 +85,24 @@ FetchContent_Declare(sdl3
   GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
   GIT_TAG release-3.4.16
   GIT_SHALLOW TRUE)
+# Only for .cur/.ico cursors (image.cpp still loads textures through stb), so every
+# other format is off: they pull in vendored libpng/libtiff/libwebp/libavif from git
+# submodules FetchContent doesn't fetch, or silently link whatever system copy exists.
+# CUR and ICO live in IMG_bmp.c, which is gated on SDLIMAGE_BMP; ANI (animated
+# cursors) reads its frames with IMG_LoadCUR_IO, so it needs BMP too and nothing else.
+set(SDLIMAGE_BMP ON)
+set(SDLIMAGE_ANI ON)
+foreach(_fmt AVIF GIF JPG JXL LBM PCX PNG PNM QOI SVG TGA TIF WEBP XCF XPM XV)
+  set(SDLIMAGE_${_fmt} OFF)
+endforeach()
+set(SDLIMAGE_BMP_SAVE OFF) # load only
+set(SDLIMAGE_ANI_SAVE OFF)
+# Static (BUILD_SHARED_LIBS is still OFF from ktx above): unlike SDL3 and Jolt this
+# is linked into KuruLib alone, so there is no second copy to keep in sync.
+FetchContent_Declare(sdl3_image
+  GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
+  GIT_TAG release-3.4.6
+  GIT_SHALLOW TRUE)
 # header/source drop, no CMakeLists of its own
 FetchContent_Declare(imgui
   GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -118,7 +136,7 @@ FetchContent_Declare(recastnavigation
   GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
   GIT_TAG v1.6.0
   GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 imgui jolt recastnavigation)
+FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui jolt recastnavigation)
 
 file(GLOB_RECURSE KURU_LIB_SRC src/lib/*.cpp)
 file(GLOB_RECURSE KURU_GAME_SRC src/game/*.cpp)
@@ -147,7 +165,11 @@ target_include_directories(KuruLib PUBLIC src/lib ${imgui_SOURCE_DIR} ${imgui_SO
 # Jolt and SDL3 build shared (see the FetchContent_Declare comments above) so
 # there is exactly one instance of each process-wide, even though both
 # KuruLib.dll and Kuru.exe link them.
-target_link_libraries(KuruLib PUBLIC Vulkan::Vulkan SDL3::SDL3 glm::glm EnTT::EnTT Jolt::Jolt
+# SDL3_image is the one PUBLIC dep that stays static: Kuru.exe gets its own copy of
+# the loaders, which is fine because they hold no global state (IMG_Init is a
+# deprecated no-op in 3.x and no dynamically-loaded format backends are enabled).
+target_link_libraries(KuruLib PUBLIC Vulkan::Vulkan SDL3::SDL3 SDL3_image::SDL3_image
+  glm::glm EnTT::EnTT Jolt::Jolt
   PRIVATE ktx)
 # stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
 target_include_directories(KuruLib PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR})
@@ -175,9 +197,14 @@ add_custom_command(TARGET Kuru POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE:Jolt::Jolt> $<TARGET_FILE_DIR:Kuru>)
 
-# main.cpp opens textures/ and models/ cwd-relative too. ponytail: configure-time copy, static assets
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets/textures ${CMAKE_CURRENT_SOURCE_DIR}/assets/models
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+# main.cpp opens textures/, models/ and cursors/ cwd-relative too. Build time, not
+# configure time: file(COPY) ran once at cmake, so an asset added afterwards stayed
+# missing until someone re-configured - and the only symptom was a failed load.
+foreach(_dir textures models cursors)
+  add_custom_command(TARGET Kuru POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/${_dir} $<TARGET_FILE_DIR:Kuru>/${_dir})
+endforeach()
 
 # render.cpp opens shaders/*.spv relative to the cwd, so emit them next to the binary.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders) # slangc won't create it

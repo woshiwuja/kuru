@@ -1,6 +1,7 @@
 #include "core.hpp"
 #include "../debug/debug.hpp"
 #include "../image/image.hpp"
+#include "imgui.h"
 #include "physics/physics.hpp"
 #include <SDL3/SDL_vulkan.h>
 #include <imgui_impl_sdl3.h>
@@ -116,8 +117,7 @@ void Core::initPhysics() { physicsManager->init(); };
 
 void Core::initGui() {
   IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  ImGui::CreateContext();ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NoMouseCursorChange;
   ImGui::StyleColorsDark();
 
   ImGui_ImplSDL3_InitForVulkan(window->window);
