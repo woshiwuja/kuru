@@ -22,11 +22,7 @@ struct CharacterControllerPlugin : public Plugin{
         float mouseY = 0.0f;
         SDL_GetMouseState(&mouseX, &mouseY);
         for(auto [e,camera] : r.view<Camera, MainCamera>().each()){
-            if (castRay(camera.position(), screenTarget(frame, {mouseX, mouseY}))) {
-                std::cout << "hit\n";
-            } else {
-                std::cout << "nohit\n";
-            }
+            if (castRay(camera.position(), screenTarget(frame, {mouseX, mouseY}))){};
         }
     }
 };

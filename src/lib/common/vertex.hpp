@@ -55,6 +55,18 @@ struct std::hash<KR::Vertex>
 };
 
 namespace KR {
+// Must match MAX_LIGHTS in assets/shaders/slang.slang.
+constexpr uint32_t MAX_LIGHTS = 4;
+
+// One LightingPlugin DirectionalLight, as it's packed into the UBO's light
+// array. xyz used in both fields, w is padding to keep each light a clean
+// 32-byte, 16-byte-aligned pair for the shader's cbuffer array.
+struct GPULight
+{
+	alignas(16) glm::vec4 direction;
+	alignas(16) glm::vec4 color;
+};
+
 struct UniformBufferObject
 {
 	alignas(16) glm::mat4 model;
@@ -62,8 +74,7 @@ struct UniformBufferObject
 	alignas(16) glm::mat4 proj;
 	// x: 1 = procedural terrain shading, 0 = plain textured mesh. y, z: world height range.
 	alignas(16) glm::vec4 material;
-	// xyz: sun direction/color, normalized and scaled by LightingPlugin's DirectionalLight. w unused.
-	alignas(16) glm::vec4 sunDirection;
-	alignas(16) glm::vec4 sunColor;
+	alignas(16) GPULight lights[MAX_LIGHTS];
+	uint32_t lightCount = 0;
 };
 } // namespace KR

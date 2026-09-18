@@ -1,6 +1,7 @@
 #include "render.hpp"
 #include "lighting.hpp"
 #include <Kuru.h>
+#include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <random>
 
@@ -500,13 +501,17 @@ void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
 
 void RenderPlugin::updateUniforms(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
-  glm::vec4 sunDirection = {0.0f, 1.0f, 0.0f, 0.0f};
-  glm::vec4 sunColor = {1.0f, 1.0f, 1.0f, 0.0f};
-  auto lightView = reg.view<DirectionalLight>();
-  if (lightView.begin() != lightView.end()) {
-    const DirectionalLight &light = lightView.get<DirectionalLight>(*lightView.begin());
-    sunDirection = glm::vec4(glm::normalize(light.direction), 0.0f);
-    sunColor = glm::vec4(light.color, 0.0f);
+
+  // Gathered once per frame, not per entity: every renderable shares the same
+  // set of lights, so there's no point re-walking the light view for each one.
+  GPULight lights[MAX_LIGHTS];
+  uint32_t lightCount = 0;
+  for (auto [light_e, light] : reg.view<DirectionalLight>().each()) {
+    if (lightCount >= MAX_LIGHTS) {
+      break;
+    }
+    lights[lightCount++] = GPULight{.direction = glm::vec4(light.direction, 0.0f),
+                                    .color = glm::vec4(light.color, 0.0f)};
   }
 
   for (auto [entity, transform, material, renderable] :
@@ -515,8 +520,8 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
                             .view = frame.view,
                             .proj = frame.proj,
                             .material = material.params,
-                            .sunDirection = sunDirection,
-                            .sunColor = sunColor};
+                            .lightCount = lightCount};
+    std::copy(lights, lights + lightCount, ubo.lights);
     memcpy(renderable.uniformBuffersMapped[frame.frameIndex], &ubo,
            sizeof(ubo));
   }
@@ -577,7 +582,9 @@ void RenderPlugin::updateSkyUniforms(entt::registry &reg) {
   // sky from shifting as the camera moves, while still rotating with it.
   glm::mat4 viewRotOnly = glm::mat4(glm::mat3(frame.view));
 
-  // ponytail: first light only, same as updateUniforms.
+  // The procedural sky models a single sun, so it only ever tints with the
+  // first light, unlike updateUniforms which now lights meshes with all of
+  // them.
   glm::vec4 sunColor = {1.0f, 1.0f, 1.0f, 0.0f};
   auto lightView = reg.view<DirectionalLight>();
   if (lightView.begin() != lightView.end()) {

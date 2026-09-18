@@ -13,16 +13,6 @@ struct DirectionalLight {
 
 struct LightingPlugin : public Plugin {
   void init(entt::registry &reg) override;
-  void update(entt::registry &reg) override {
-    ImGui::Begin("Lights");
-      for (auto [e, light] : reg.view<DirectionalLight>().each()) {
-        if (ImGui::DragFloat3("direction", &light.direction.x, 0.01f, -1.0f,
-                              1.0f)) {
-          light.direction = glm::normalize(light.direction);
-        }
-        ImGui::ColorEdit3("color", &light.color.x,
-                          ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
-      }
-    ImGui::End();
-  };
+  void update(entt::registry &reg) override;
+  void UI(entt::registry &reg);
 };

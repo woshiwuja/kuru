@@ -1,4 +1,5 @@
 #pragma once
+#include "Jolt/Physics/Body/BodyCreationSettings.h"
 #include "entt/entity/fwd.hpp"
 #include "plugin/plugin.hpp"
 #include <string>

@@ -7,15 +7,23 @@
 // The raymarching, erosion simulation, water and atmosphere are not here - they need
 // offscreen passes this renderer does not have yet.
 
+// Must match MAX_LIGHTS in src/lib/common/vertex.hpp.
+static const uint MAX_LIGHTS = 4;
+
+// One LightingPlugin DirectionalLight. xyz used in both fields, w padding.
+struct GPULight {
+    float4 direction;
+    float4 color;
+};
+
 struct UniformBufferObject {
     float4x4 model;
     float4x4 view;
     float4x4 proj;
     // x: 1 = procedural terrain, 0 = plain textured mesh. y, z: world height range.
     float4 material;
-    // xyz: sun direction/color from LightingPlugin's DirectionalLight. w unused.
-    float4 sunDirection;
-    float4 sunColor;
+    GPULight lights[MAX_LIGHTS];
+    uint lightCount;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
@@ -107,7 +115,9 @@ float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : 
         // rim reads as a terrain-scale atmospheric effect, not something a
         // small textured prop needs.
         float3 lit = albedo * SKY_COLOR * (0.5 + 0.5 * n.y);
-        lit += albedo * ubo.sunColor.xyz * saturate(dot(n, ubo.sunDirection.xyz));
+        for (uint i = 0; i < ubo.lightCount; i++) {
+            lit += albedo * ubo.lights[i].color.xyz * saturate(dot(n, ubo.lights[i].direction.xyz));
+        }
         lit = lerp(lit, EDGE_COLOR, edgeFactor(worldPos, n));
         return float4(tonemapACES(lit), 1.0);
     }
@@ -130,11 +140,13 @@ float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : 
     diffuse = lerp(diffuse, DIRT_COLOR, smoothstep(0.20, 0.45, slope) * smoothstep(0.75, 0.30, h));
     diffuse = lerp(diffuse, SNOW_COLOR, smoothstep(0.82, 0.93, h) * smoothstep(0.55, 0.20, slope));
 
-    // Ambient from a sky gradient, direct sun, and a crude single bounce.
+    // Ambient from a sky gradient, direct light, and a crude single bounce.
     float3 lit = diffuse * SKY_COLOR * (0.5 + 0.5 * normal.y);
-    lit += diffuse * ubo.sunColor.xyz * saturate(dot(normal, ubo.sunDirection.xyz));
-    // Crude single bounce off the ground, from the mirrored sun direction.
-    lit += diffuse * ubo.sunColor.xyz * saturate(dot(normal, ubo.sunDirection.xyz * float3(1.0, -1.0, 1.0))) * 0.15;
+    for (uint i = 0; i < ubo.lightCount; i++) {
+        lit += diffuse * ubo.lights[i].color.xyz * saturate(dot(normal, ubo.lights[i].direction.xyz));
+        // Crude single bounce off the ground, from the mirrored light direction.
+        lit += diffuse * ubo.lights[i].color.xyz * saturate(dot(normal, ubo.lights[i].direction.xyz * float3(1.0, -1.0, 1.0))) * 0.15;
+    }
     lit = lerp(lit, EDGE_COLOR, edgeFactor(worldPos, normal));
 
     return float4(tonemapACES(lit), 1.0);
