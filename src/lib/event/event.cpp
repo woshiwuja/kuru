@@ -41,6 +41,16 @@ bool EventManager::down(SDL_Scancode key) const {
   return keys != nullptr && keys[key];
 }
 
+bool EventManager::pressed(SDL_Scancode key) const {
+  for (const SDL_Event &event : events) {
+    if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+        event.key.scancode == key) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool EventManager::down(int mouseButton) const {
   return (buttons & SDL_BUTTON_MASK(mouseButton)) != 0;
 }
