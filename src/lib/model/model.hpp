@@ -29,9 +29,6 @@ struct Mesh {
   float maxY = 0.0f;
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
-  // One entry per glTF primitive: a multi-material model (e.g. a character
-  // with separate body/claws/head/legs materials) needs one draw call and
-  // one texture per primitive, not one texture stretched over everything.
   std::vector<SubMesh> submeshes;
 
   void upload(const std::vector<Vertex> &vertices,
@@ -40,10 +37,8 @@ struct Mesh {
 
 std::shared_ptr<Mesh> loadModel(const std::string &path);
 
-// Procedural UV sphere - no glTF file needed, for debug visuals/placeholders.
 std::shared_ptr<Mesh> createSphere(float radius = 0.5f, uint32_t rings = 16,
                                    uint32_t sectors = 32);
 
-// Procedural cube (unshared normals/UVs per face, so edges shade correctly).
 std::shared_ptr<Mesh> createCube(float halfExtent = 0.5f);
 }

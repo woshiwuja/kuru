@@ -301,9 +301,6 @@ std::shared_ptr<Mesh> createSphere(float radius, uint32_t rings,
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
 
-  // Rows of latitude from the north pole (v=0) to the south pole (v=1),
-  // each with one full ring of longitude - shared poles would need split
-  // UVs anyway, so this just leaves a degenerate ring at each end instead.
   const uint32_t columns = sectors + 1;
   for (uint32_t r = 0; r <= rings; r++) {
     const float v = static_cast<float>(r) / static_cast<float>(rings);
@@ -352,9 +349,6 @@ std::shared_ptr<Mesh> createCube(float halfExtent) {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
 
-  // Each face gets its own 4 vertices instead of sharing the cube's 8 corners,
-  // so every face keeps a flat normal and its own 0..1 UVs instead of the
-  // averaged/smeared ones shared corners would produce.
   struct Face {
     glm::vec3 normal, right, up;
   };

@@ -1,6 +1,8 @@
 #include <Kuru.h>
 #include "plugins/camera.hpp"
 #include "plugins/controller.hpp"
+#include "plugins/inspector.hpp"
+#include "plugins/inventory.hpp"
 #include "plugins/lighting.hpp"
 #include "plugins/map.hpp"
 #include "plugins/mesh_registry.hpp"
@@ -33,6 +35,9 @@ int main()
 		app.addPlugin(std::make_unique<NavigationPlugin>());
 		app.addPlugin(std::make_unique<CharacterPlugin>());
 		app.addPlugin(std::make_unique<CharacterControllerPlugin>());
+		app.addPlugin(std::make_unique<InspectorPlugin>());
+		app.addPlugin(std::make_unique<StatPlugin>());
+		app.addPlugin(std::make_unique<InventoryPlugin>());
 		app.init();
 		app.run();
 		app.end();

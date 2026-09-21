@@ -1,5 +1,6 @@
 #pragma once
 #include <entt/entt.hpp>
+#include <string>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -16,6 +17,24 @@ struct FrameContext {
 	bool                           uiCapturesMouse    = false;
 	bool                           uiCapturesKeyboard = false;
 };
+
+// Reflects a component so the inspector can name, add and remove it without
+// knowing the type. Registry members can't be attached directly: try_get and
+// remove are overloaded or variadic, so &registry::foo<T> is ambiguous.
+template<typename T>
+void metaAdd(entt::registry &r, entt::entity e) { r.emplace_or_replace<T>(e); }
+template<typename T>
+void metaRemove(entt::registry &r, entt::entity e) { r.remove<T>(e); }
+
+template<typename T>
+void registerComponent() {
+	using namespace entt::literals;
+	entt::meta_factory<T>{}
+		.template func<&metaAdd<T>>("add"_hs)
+		.template func<&metaRemove<T>>("remove"_hs);
+}
+
+inline std::string typeName(const entt::meta_type &t) { return std::string{t.info().name()}; }
 
 // A plugin is a set of components and systems. Concrete plugins live in
 // src/game/plugins; this is only the interface Core runs them through.

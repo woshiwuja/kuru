@@ -83,25 +83,12 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
               << RC_SPAN_MAX_HEIGHT * c.cellHeight << "); using " << cfg.ch
               << " instead\n";
   }
-  // rcBuildCompactHeightfield allocates width*height cells up front (plus a
-  // comparably sized spans array) - a cs tuned for a human-scale test level
-  // (RecastDemo's default 0.3) blows past any sane memory budget on a terrain
-  // spanning thousands of units, and fails the allocation instead of just
-  // being slow. Coarsen cs so the grid stays bounded.
   constexpr int MAX_GRID_DIM = 8000;
   const float spanX = geom.bmax[0] - geom.bmin[0];
   const float spanZ = geom.bmax[2] - geom.bmin[2];
   const float minCellSize = std::max(spanX, spanZ) / MAX_GRID_DIM;
   cfg.cs = std::max(c.cellSize, minCellSize);
-  if (cfg.cs > c.cellSize) {
-    std::cout << "navmesh: cellSize " << c.cellSize
-              << " would need a grid over " << MAX_GRID_DIM
-              << " cells wide for this terrain; using " << cfg.cs
-              << " instead\n";
-  }
   cfg.walkableSlopeAngle = c.agentMaxSlope;
-  // ceil per l'altezza (un agente alto 2.0 non passa in 1.9), floor per il
-  // gradino (non promettere una salita che non c'e'), come nel sample.
   cfg.walkableHeight = static_cast<int>(std::ceil(c.agentHeight / cfg.ch));
   cfg.walkableClimb = static_cast<int>(std::floor(c.agentMaxClimb / cfg.ch));
   cfg.walkableRadius = static_cast<int>(std::ceil(c.agentRadius / cfg.cs));
@@ -125,7 +112,7 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
             << " (cs=" << cfg.cs << " ch=" << cfg.ch << ")\n";
 
   progress = 1;
-  // 1. voxelizzazione
+  // voxel
   RcOwn<rcHeightfield, rcFreeHeightField> solid(rcAllocHeightfield());
   if (!rcCreateHeightfield(&ctx, *solid, cfg.width, cfg.height, cfg.bmin,
                            cfg.bmax, cfg.cs, cfg.ch)) {
@@ -143,13 +130,13 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   }
 
   progress = 2;
-  // 2. filtri: in quest'ordine, ognuno assume il precedente fatto
+  // filter
   rcFilterLowHangingWalkableObstacles(&ctx, cfg.walkableClimb, *solid);
   rcFilterLedgeSpans(&ctx, cfg.walkableHeight, cfg.walkableClimb, *solid);
   rcFilterWalkableLowHeightSpans(&ctx, cfg.walkableHeight, *solid);
 
   progress = 3;
-  // 3. heightfield compatto ed erosione del raggio dell'agente
+  // heightfield
   RcOwn<rcCompactHeightfield, rcFreeCompactHeightfield> chf(
       rcAllocCompactHeightfield());
   if (!rcBuildCompactHeightfield(&ctx, cfg.walkableHeight, cfg.walkableClimb,
@@ -161,9 +148,7 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   }
 
   progress = 4;
-  // 4. regioni watershed: piu' lento delle alternative monotone, ma da' le
-  // regioni migliori. ponytail: il partizionamento del demo si sceglie da GUI,
-  // qui e' fisso.
+  // watershed
   if (!rcBuildDistanceField(&ctx, *chf)) {
     throw std::runtime_error("rcBuildDistanceField fallita");
   }
@@ -471,7 +456,7 @@ void NavigationPlugin::UI(entt::registry &reg) {
   using namespace ImGui;
   if (Begin("Navigation")) {
     const auto label = [&reg](entt::entity e) {
-      if (!reg.valid(e))
+      if (!reg.valid(e) || !reg.all_of<MeshRef>(e))
         return std::string("<nessuna>");
       return std::format("#{} - {} verts{}", entt::to_integral(e),
                          reg.get<MeshRef>(e).mesh->vertices.size(),

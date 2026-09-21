@@ -10,21 +10,23 @@
 #include "plugins.hpp"
 #include "physics.hpp"
 #include "render.hpp"
+#include "stats.hpp"
 #include <format>
 #include <string>
 
 using namespace KR;
 
-struct Name {
-  std::string text;
-};
+// The entity the inspector is looking at.
+struct Selected {};
+
 struct DefaultPlugin : public Plugin {
   void init(entt::registry &reg) override {
     entt::entity e = reg.create();
     reg.emplace<Character>(e);
     reg.emplace<FirstName>(e, "coglione");
     reg.emplace<LastName>(e, "culone");
-    reg.emplace<Strength>(e,Strength{{.lvl = 1, .currentExp = 0,  .expToNext = 100}});
+    reg.emplace<Strenght>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
+    reg.emplace<Vitality>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
     auto &t = reg.emplace<Transform>(e);
     t.position = glm::vec3{0, 4000, 0};
     t.rotation = glm::quat(glm::vec3{0.7, 0.7, 0}); // da euler radianti
@@ -64,7 +66,7 @@ struct DefaultPlugin : public Plugin {
                           entt::to_integral(e))
                   .c_str(),
               &open);
-        ImGui::InputText("Name", &first_name);
+        InputText("Name", &first_name);
         auto t = reg.try_get<Transform>(e);
         if (t != nullptr) {
           DragFloat3("Position", &t->position.x, 5.0f);

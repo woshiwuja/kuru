@@ -28,6 +28,7 @@ struct LocalTransform: public Transform{};
 
 struct TransformPlugin : public Plugin {
     void init(entt::registry &r) override {
+        registerComponent<Transform>();
         r.ctx().emplace<GlobalTransform>();
         r.ctx().emplace<LocalTransform>();
     };
