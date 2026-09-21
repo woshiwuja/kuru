@@ -7,34 +7,46 @@
 #include <cstdint>
 using namespace KR;
 struct Inventory {
-  uint32_t width = 100;
-  uint32_t height = 100;
+  uint32_t width = 50;
+  uint32_t height = 50;
 };
 struct InventoryPlugin : public KR::Plugin {
     void init(entt::registry &r) override {
         registerComponent<Inventory>();
     }
   void update(entt::registry &r) override {
-    auto &event = Core::get()->eventManager;
-    if (event->down(SDL_SCANCODE_I)) {
-      UI(r);
-    }
-  }
-  void UI(entt::registry &r) {
     using namespace ImGui;
-    Begin("Inventory");
+    // The open flag lives in ImGui's storage, so it survives between frames
+    // without the plugin holding state of its own.
+    ImGuiStorage *state = GetStateStorage();
+    const ImGuiID openId = GetID("inventory open");
+    bool open = state->GetBool(openId, false);
+
+    const auto &frame = r.ctx().get<FrameContext>();
+    auto &event = Core::get()->eventManager;
+    if (!frame.uiCapturesKeyboard && event->pressed(SDL_SCANCODE_I)) {
+      open = !open;
+    }
+    if (open) UI(r, open);
+    state->SetBool(openId, open);
+  }
+  void UI(entt::registry &r, bool &open) {
+    using namespace ImGui;
+    if (Begin("Inventory", &open)) {
     for (auto [e, inventory] : r.view<Selected, Inventory>().each()) {
-      if (ImGui::BeginTable("Inventory", inventory.width)) {
+      if (BeginTable("Inventory", inventory.width)) {
         for (int i = 0; i < inventory.width * inventory.height; i++) {
-          if (i % inventory.width == 0)
-            ImGui::TableNextRow();
-          ImGui::TableSetColumnIndex(i % inventory.width);
-          ImGui::PushID(i);
-          ImGui::Button("", ImVec2(96, 96));
-          ImGui::PopID();
+          if (i % inventory.width == 0){
+              TableNextRow();
+              TableSetColumnIndex(i % inventory.width);
+              PushID(i);
+              Button("", ImVec2(96, 96));
+              PopID();
+          }
         }
-        ImGui::EndTable();
+        EndTable();
       }
+    }
     }
     End();
   };

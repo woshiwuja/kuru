@@ -20,8 +20,7 @@ struct EventManager {
 
 	void pump();
 	[[nodiscard]] bool down(SDL_Scancode key) const;
-	[[nodiscard]] bool down(int mouseButton) const;
-	// Edge, not level: a toggle wants the press, not the whole hold.
 	[[nodiscard]] bool pressed(SDL_Scancode key) const;
+	[[nodiscard]] bool down(int mouseButton) const;
 };
 } // namespace KR
