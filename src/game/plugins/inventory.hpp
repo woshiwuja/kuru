@@ -16,18 +16,16 @@ struct InventoryPlugin : public KR::Plugin {
     }
   void update(entt::registry &r) override {
     using namespace ImGui;
-    // The open flag lives in ImGui's storage, so it survives between frames
-    // without the plugin holding state of its own.
+    if (r.storage<Selected>().empty()) return;
     ImGuiStorage *state = GetStateStorage();
     const ImGuiID openId = GetID("inventory open");
     bool open = state->GetBool(openId, false);
-
     const auto &frame = r.ctx().get<FrameContext>();
     auto &event = Core::get()->eventManager;
     if (!frame.uiCapturesKeyboard && event->pressed(SDL_SCANCODE_I)) {
       open = !open;
     }
-    if (open) UI(r, open);
+    if (open){UI(r, open);}
     state->SetBool(openId, open);
   }
   void UI(entt::registry &r, bool &open) {
@@ -40,7 +38,7 @@ struct InventoryPlugin : public KR::Plugin {
               TableNextRow();
               TableSetColumnIndex(i % inventory.width);
               PushID(i);
-              Button("", ImVec2(96, 96));
+              Button("", vec2(64, 64));
               PopID();
           }
         }

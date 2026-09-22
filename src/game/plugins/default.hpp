@@ -6,7 +6,6 @@
 #include "entt/entity/entity.hpp"
 #include "entt/entity/fwd.hpp"
 #include "character.hpp"
-#include "glm/ext/vector_float3.hpp"
 #include "plugins.hpp"
 #include "physics.hpp"
 #include "render.hpp"
@@ -28,13 +27,13 @@ struct DefaultPlugin : public Plugin {
     reg.emplace<Strenght>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
     reg.emplace<Vitality>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
     auto &t = reg.emplace<Transform>(e);
-    t.position = glm::vec3{0, 4000, 0};
+    t.position = {0, 100, 0};
     t.rotation = glm::quat(glm::vec3{0.7, 0.7, 0}); // da euler radianti
     t.scale = glm::vec3{1, 1, 1};
     using namespace JPH::literals;
     auto &bodySettings = reg.emplace<JPH::BodyCreationSettings>(
         e, new JPH::SphereShape(1.0f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
-        JPH::Quat::sIdentity(), JPH::EMotionType::Kinematic, MOVING);
+        JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
     // Spawns 1500+ units above the terrain and free-falls into it; by impact
     // it's moving fast enough that discrete collision can miss the heightfield
     // between steps (tunnels through). LinearCast sweeps the shape instead.
@@ -44,7 +43,7 @@ struct DefaultPlugin : public Plugin {
     entt::entity mapEnt = reg.create();
     reg.emplace<Character>(mapEnt);
     auto &mapT = reg.emplace<Transform>(mapEnt);
-    mapT.position = glm::vec3{0, 2000, 0};
+    mapT.position = {0, 2000, 0};
     mapT.rotation = glm::vec3{0.0, 0.0, 0.0};
     mapT.scale = glm::vec3{1, 1, 1};
     //spawn(reg, mapEnt, "models/sanctuary.glb", "");
@@ -69,7 +68,7 @@ struct DefaultPlugin : public Plugin {
         InputText("Name", &first_name);
         auto t = reg.try_get<Transform>(e);
         if (t != nullptr) {
-          DragFloat3("Position", &t->position.x, 5.0f);
+          dragVec3("Position", t->position, 5.0f);
           dragRotation("Rotation", t->rotation);
           DragFloat3("Scale", &t->scale.x, 0.01f, 0.001f, 1000.0f);
         }

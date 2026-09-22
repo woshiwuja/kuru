@@ -8,7 +8,7 @@ using namespace KR;
 namespace KR{
     struct Camera {
 	glm::vec3 pivot        = {0.0f, 0.0f, 0.0f};
-	float     groundHeight = 2000.0f;
+	float     groundHeight = 10.0f;
 
 	float yaw      = -135.0f; // degrees, around +Y
 	float pitch    = -30.0f;  // degrees, negative looks down at the pivot

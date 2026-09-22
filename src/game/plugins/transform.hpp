@@ -9,11 +9,15 @@ using namespace KR;
 
 
 struct Transform {
-	glm::vec3 position = {0.0f, 0.0f, 0.0f};
+	KR::vec3 position = {0.0f, 0.0f, 0.0f};
 	glm::quat rotation = {1.0f,0.0f, 0.0f, 0.0f};
 	glm::vec3 scale    = {1.0f, 1.0f, 1.0f};
 	glm::mat4 matrix() const;
 };
+
+inline bool dragVec3(const char *label, KR::vec3 &v, float speed = 1.0f) {
+  return ImGui::DragScalarN(label, ImGuiDataType_Double, &v.x, 3, speed);
+}
 
 inline bool dragRotation(const char *label, glm::quat &rotation) {
   glm::vec3 euler = glm::degrees(glm::eulerAngles(rotation));
@@ -36,13 +40,14 @@ struct TransformPlugin : public Plugin {
         UI(r);
     };
     void UI(entt::registry &r){
+        using namespace ImGui;
         if (ImGui::Begin("Transforms")) {
           for (auto [entity, transform] : r.view<Transform>().each()) {
             ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
             if (ImGui::CollapsingHeader(
                     ("entity " + std::to_string(entt::to_integral(entity)))
                         .c_str())) {
-              ImGui::DragFloat3("position", &transform.position.x, 5.0f);
+              dragVec3("position", transform.position, 5.0f);
               dragRotation("rotation", transform.rotation);
               ImGui::DragFloat3("scale", &transform.scale.x, 0.01f, 0.001f, 1000.0f);
               if (ImGui::Button("center at origin")) {

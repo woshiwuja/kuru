@@ -161,7 +161,9 @@ void Core::shutdownGui() {
 void Core::initECS() {
   reg.ctx().emplace<FrameContext>();
   for (auto &plugin : plugins) {
-    std::cerr << "[debug] initECS: plugin->init " << typeid(*plugin).name()
+    const char* name = typeid(*plugin).name();
+    while (isdigit(*name)) ++name;
+    std::cerr << "[debug] initECS: plugin->init " << name
                << "\n" << std::flush;
     plugin->init(reg);
   }

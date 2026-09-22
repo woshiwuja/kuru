@@ -1,5 +1,6 @@
 #pragma once
 #include "core/core.hpp"
+#include "math/math.hpp"
 #include "common/common.hpp"
 #include "audio/audio.hpp"
 #include "event/event.hpp"

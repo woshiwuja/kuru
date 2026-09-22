@@ -556,7 +556,9 @@ void NavigationPlugin::update(entt::registry &reg) {
                      DT_CROWD_OPTIMIZE_TOPO | DT_CROWD_OBSTACLE_AVOIDANCE |
                      DT_CROWD_SEPARATION;
     ap.separationWeight = 2.0f;
-    agent.idx = nav->crowd->addAgent(&t.position.x, &ap);
+    // Detour is float-only; Transform::position is double for large-world range.
+    const glm::vec3 pos = t.position;
+    agent.idx = nav->crowd->addAgent(&pos.x, &ap);
   }
 
   for (auto [e, agent, dest] : reg.view<NavAgent, NavDest>().each()) {

@@ -35,7 +35,7 @@ static constexpr JPH::uint BD_NUM_LAYERS(2);
 
 struct PhysicsManager {
   const JPH::uint maxBodies = 65535;
-  const JPH::uint numBodyMutexes = 0; // 0 = let Jolt pick
+  const JPH::uint numBodyMutexes = 0;
   const JPH::uint maxBodyPairs = 65535;
   const JPH::uint maxContactConstraints = 10240;
   JPH::TempAllocatorImpl tempAllocator{10 * 1024 * 1024};

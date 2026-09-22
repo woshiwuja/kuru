@@ -2,7 +2,6 @@
 #include <Kuru.h>
 #include "entt/entity/fwd.hpp"
 #include <entt/entt.hpp>
-#include <glm/glm.hpp>
 
 using namespace KR;
 
