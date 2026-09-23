@@ -61,6 +61,15 @@ struct SkyUniformBufferObject {
 	glm::vec4 sunColor;
 };
 
+// Matches OutlinePush in shaders/outline.slang.
+struct OutlinePushConstants {
+	glm::vec2 resolution;
+	// See the shader: world-unit distance deltas rescaled to the threshold the
+	// original Shadertoy pass was tuned against. Nudge to taste.
+	float     distScale = 1.0f;
+	float     strength  = .8f;
+};
+
 struct RenderPlugin : Plugin {
 	// The pipeline, its layout and the descriptor pool describe how this plugin
 	// draws: they belong to it, not to Core.
@@ -86,7 +95,26 @@ struct RenderPlugin : Plugin {
 	std::vector<vk::raii::DescriptorSet> skyDescriptorSets;
 	float skyTime = 0.0f; // iTime: seconds since startup, accumulated from deltaTime
 
+	// Outline: a normal+distance prepass into graphics->normalImage before the
+	// main pass, then a fullscreen triangle inside it that subtracts the edges
+	// it finds. See assets/shaders/outline.slang.
+	//
+	// The prepass reuses this plugin's mesh pipelineLayout and per-entity
+	// descriptor sets - it reads the same UBO at binding 0 and just ignores the
+	// texture - so only the pipeline itself is new.
+	vk::raii::Pipeline            normalPipeline          = nullptr;
+	vk::raii::DescriptorSetLayout outlineDescriptorSetLayout = nullptr;
+	vk::raii::PipelineLayout      outlinePipelineLayout   = nullptr;
+	vk::raii::Pipeline            outlinePipeline         = nullptr;
+	vk::raii::DescriptorPool      outlineDescriptorPool   = nullptr;
+	std::vector<vk::raii::DescriptorSet> outlineDescriptorSets;
+	// One set is enough - it points at one image that never changes per frame -
+	// but the view is recreated on resize, so track which one it was written for.
+	vk::ImageView                 outlineBoundView        = nullptr;
+	OutlinePushConstants          outlinePush;
+
 	void init(entt::registry &reg) override;
+	void start(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
 
 	void createDescriptorSetLayout();
@@ -98,6 +126,11 @@ struct RenderPlugin : Plugin {
 	void createSkyDescriptorSetLayout();
 	void createSkyPipeline();
 	void createSkyResources(); // noise texture, per-frame UBOs, descriptor sets
+
+	void createNormalPipeline();
+	void createOutlineDescriptorSetLayout();
+	void createOutlinePipeline();
+	void createOutlineDescriptorSet();
 
 	void attach(entt::registry &reg, entt::entity entity,
 	            std::shared_ptr<Texture> texture, glm::vec4 params);
@@ -115,4 +148,7 @@ struct RenderPlugin : Plugin {
 	void drawMeshes(entt::registry &reg);
 	void updateSkyUniforms(entt::registry &reg);
 	void drawSky(entt::registry &reg);
+	// Outside the main pass (Plugin::start), unlike every other system here.
+	void drawNormalPrepass(entt::registry &reg);
+	void drawOutline(entt::registry &reg);
 };

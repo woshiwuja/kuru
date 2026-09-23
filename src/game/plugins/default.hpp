@@ -7,9 +7,8 @@
 #include "entt/entity/fwd.hpp"
 #include "character.hpp"
 #include "plugins.hpp"
-#include "physics.hpp"
-#include "render.hpp"
 #include "stats.hpp"
+#include "transform.hpp"
 #include <format>
 #include <string>
 
@@ -22,8 +21,7 @@ struct DefaultPlugin : public Plugin {
   void init(entt::registry &reg) override {
     entt::entity e = reg.create();
     reg.emplace<Character>(e);
-    reg.emplace<FirstName>(e, "coglione");
-    reg.emplace<LastName>(e, "culone");
+    reg.emplace<Name>(e, Name{.fname="coglione"});
     reg.emplace<Strenght>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
     reg.emplace<Vitality>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
     auto &t = reg.emplace<Transform>(e);
@@ -41,19 +39,19 @@ struct DefaultPlugin : public Plugin {
     spawn(reg, e, "models/spongebob.glb", "");
 
     entt::entity mapEnt = reg.create();
-    reg.emplace<Character>(mapEnt);
-    auto &mapT = reg.emplace<Transform>(mapEnt);
-    mapT.position = {0, 2000, 0};
-    mapT.rotation = glm::vec3{0.0, 0.0, 0.0};
-    mapT.scale = glm::vec3{1, 1, 1};
-    //spawn(reg, mapEnt, "models/sanctuary.glb", "");
+    auto &mapT = reg.emplace<Transform>(mapEnt, Transform{
+        .position = {0, 2000, 0},
+        .rotation = glm::vec3{0.0, 0.0, 0.0},
+        .scale = glm::vec3{1, 1, 1},
+    });
+    reg.emplace<Name>(mapEnt,Name{.fname = "ASS"});
   };
   void update(entt::registry &reg) override {
     using namespace ImGui;
     ImGuiStorage *state = GetStateStorage();
     Begin("Characters");
-    for (auto [e, first_name, last_name] : reg.view<Character, FirstName, LastName>().each()) {
-      Text("%s %s", first_name.c_str(), last_name.c_str());
+    for (auto [e, name] : reg.view<Name>().each()) {
+      Text("%s %s", name.fname.c_str(), name.lname.c_str());
       PushID(static_cast<int>(entt::to_integral(e)));
       auto openId = GetID("inspector open");
       bool open = state->GetBool(openId, false);
@@ -61,11 +59,11 @@ struct DefaultPlugin : public Plugin {
         open = true;
       }
       if (open) {
-        Begin(std::format("{} details###details{}", first_name.c_str(),
+        Begin(std::format("{} details###details{}", name.fname.c_str(),
                           entt::to_integral(e))
                   .c_str(),
               &open);
-        InputText("Name", &first_name);
+        InputText("Name", &name.fname);
         auto t = reg.try_get<Transform>(e);
         if (t != nullptr) {
           dragVec3("Position", t->position, 5.0f);

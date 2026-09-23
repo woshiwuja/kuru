@@ -87,9 +87,11 @@ void Core::initVulkan() {
   graphics->createSurface();
   std::cerr << "[debug] initVulkan: device->pickPhysicalDevice\n" << std::flush;
   device->pickPhysicalDevice();
-  std::cerr << "[debug] initVulkan: device->createLogicalDevice\n" << std::flush;
+  std::cerr << "[debug] initVulkan: device->createLogicalDevice\n"
+            << std::flush;
   device->createLogicalDevice();
-  std::cerr << "[debug] initVulkan: graphics->chooseMsaaSamples\n" << std::flush;
+  std::cerr << "[debug] initVulkan: graphics->chooseMsaaSamples\n"
+            << std::flush;
   graphics->chooseMsaaSamples();
   std::cerr << "[debug] initVulkan: graphics->createSwapChain\n" << std::flush;
   graphics->createSwapChain();
@@ -97,12 +99,19 @@ void Core::initVulkan() {
   graphics->createImageViews();
   std::cerr << "[debug] initVulkan: device->createCommandPool\n" << std::flush;
   device->createCommandPool();
-  std::cerr << "[debug] initVulkan: graphics->createColorResources\n" << std::flush;
+  std::cerr << "[debug] initVulkan: graphics->createColorResources\n"
+            << std::flush;
   graphics->createColorResources();
-  std::cerr << "[debug] initVulkan: graphics->createDepthResources\n" << std::flush;
+  std::cerr << "[debug] initVulkan: graphics->createDepthResources\n"
+            << std::flush;
   graphics->createDepthResources();
-  std::cerr << "[debug] initVulkan: graphics->createTextureSampler\n" << std::flush;
+  std::cerr << "[debug] initVulkan: graphics->createNormalResources\n"
+            << std::flush;
+  graphics->createNormalResources();
+  std::cerr << "[debug] initVulkan: graphics->createTextureSampler\n"
+            << std::flush;
   graphics->createTextureSampler();
+  graphics->createGbufferSampler();
   std::cerr << "[debug] initVulkan: createCommandBuffers\n" << std::flush;
   createCommandBuffers();
   std::cerr << "[debug] initVulkan: sync->init\n" << std::flush;
@@ -117,7 +126,14 @@ void Core::initPhysics() { physicsManager->init(); };
 
 void Core::initGui() {
   IMGUI_CHECKVERSION();
-  ImGui::CreateContext();ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NoMouseCursorChange;
+  ImGui::CreateContext();
+  auto &io = ImGui::GetIO();
+  io.ConfigFlags |=
+      ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NoMouseCursorChange;
+  for (const auto &entry : std::filesystem::directory_iterator(assetPath("fonts"))) {
+      if (entry.path().extension() != ".ttf") continue;
+      io.Fonts->AddFontFromFileTTF(entry.path().c_str(), 16.0f);
+  }
   ImGui::StyleColorsDark();
 
   ImGui_ImplSDL3_InitForVulkan(window->window);
@@ -161,10 +177,10 @@ void Core::shutdownGui() {
 void Core::initECS() {
   reg.ctx().emplace<FrameContext>();
   for (auto &plugin : plugins) {
-    const char* name = typeid(*plugin).name();
-    while (isdigit(*name)) ++name;
-    std::cerr << "[debug] initECS: plugin->init " << name
-               << "\n" << std::flush;
+    const char *name = typeid(*plugin).name();
+    while (isdigit(*name))
+      ++name;
+    std::cerr << "[debug] initECS: plugin->init " << name << "\n" << std::flush;
     plugin->init(reg);
   }
 }
@@ -264,13 +280,13 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
 
   const bool msaa = graphics->msaaSamples != vk::SampleCountFlagBits::e1;
   if (msaa) {
-    transitionImageLayout(
-        commandBuffer, *graphics->colorImage, vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eColorAttachmentOptimal, {},
-        vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::ImageAspectFlagBits::eColor);
+    transitionImageLayout(commandBuffer, *graphics->colorImage,
+                          vk::ImageLayout::eUndefined,
+                          vk::ImageLayout::eColorAttachmentOptimal, {},
+                          vk::AccessFlagBits2::eColorAttachmentWrite,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                          vk::ImageAspectFlagBits::eColor);
   }
 
   vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);

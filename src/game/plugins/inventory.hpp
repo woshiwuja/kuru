@@ -1,8 +1,6 @@
 #pragma once
-#include "Kuru.h"
-#include "SDL3/SDL_events.h"
+#include "entt/entt.hpp"
 #include "default.hpp"
-#include "entt/entity/fwd.hpp"
 #include "plugin/plugin.hpp"
 #include <cstdint>
 using namespace KR;

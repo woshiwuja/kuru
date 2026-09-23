@@ -74,29 +74,9 @@ float3 tonemapACES(float3 x) {
     return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
 }
 
-// Cheap single-pass edge/outline: there's no depth buffer here to sample
-// neighboring pixels from, only screen-space derivatives across the fragment's
-// own quad - so silhouettes and creases are found the same way the terrain
-// branch already finds its normal, via fwidth (= |ddx| + |ddy|).
-// Nothing here is measured; nudge the thresholds/strength to taste.
-static const float3 EDGE_COLOR          = float3(0.02, 0.02, 0.02);
-static const float  EDGE_THRESHOLD_LOW  = 0.05;
-static const float  EDGE_THRESHOLD_HIGH = 0.45;
-static const float  EDGE_STRENGTH       = 0.8;
-
-float edgeFactor(float3 worldPos, float3 normal) {
-    // Normal discontinuity: near 0 on a smooth face, spikes at creases and
-    // silhouettes (where the normal turns fastest per screen pixel).
-    float normalEdge = length(fwidth(normal));
-    // View-space depth discontinuity, relative to distance so it doesn't only
-    // fire on nearby geometry: a real edge is a jump in depth per pixel, not
-    // an absolute one.
-    float viewDepth = mul(ubo.view, float4(worldPos, 1.0)).z;
-    float depthEdge = fwidth(viewDepth) / max(0.001, abs(viewDepth));
-
-    float edge = normalEdge + depthEdge * 3.0;
-    return smoothstep(EDGE_THRESHOLD_LOW, EDGE_THRESHOLD_HIGH, edge) * EDGE_STRENGTH;
-}
+// The edges used to be found here with fwidth, for want of anything to sample
+// neighbouring pixels from. outline.slang does it properly now - a real 3x3
+// kernel over a normal+distance prepass - so nothing shades edges in this file.
 
 [shader("fragment")]
 float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : SV_Target {
@@ -118,7 +98,6 @@ float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : 
         for (uint i = 0; i < ubo.lightCount; i++) {
             lit += albedo * ubo.lights[i].color.xyz * saturate(dot(n, ubo.lights[i].direction.xyz));
         }
-        lit = lerp(lit, EDGE_COLOR, edgeFactor(worldPos, n));
         return float4(tonemapACES(lit), 1.0);
     }
 
@@ -147,7 +126,5 @@ float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : 
         // Crude single bounce off the ground, from the mirrored light direction.
         lit += diffuse * ubo.lights[i].color.xyz * saturate(dot(normal, ubo.lights[i].direction.xyz * float3(1.0, -1.0, 1.0))) * 0.15;
     }
-    lit = lerp(lit, EDGE_COLOR, edgeFactor(worldPos, normal));
-
     return float4(tonemapACES(lit), 1.0);
 }

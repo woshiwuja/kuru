@@ -197,10 +197,11 @@ add_custom_command(TARGET Kuru POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE:Jolt::Jolt> $<TARGET_FILE_DIR:Kuru>)
 
-# main.cpp opens textures/, models/ and cursors/ cwd-relative too. Build time, not
-# configure time: file(COPY) ran once at cmake, so an asset added afterwards stayed
-# missing until someone re-configured - and the only symptom was a failed load.
-foreach(_dir textures models cursors)
+# main.cpp opens textures/, models/, cursors/ and fonts/ cwd-relative too. Build
+# time, not configure time: file(COPY) ran once at cmake, so an asset added
+# afterwards stayed missing until someone re-configured - and the only symptom
+# was a failed load.
+foreach(_dir textures models cursors fonts)
   add_custom_command(TARGET Kuru POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/${_dir} $<TARGET_FILE_DIR:Kuru>/${_dir})
@@ -208,7 +209,7 @@ endforeach()
 
 # render.cpp opens shaders/*.spv relative to the cwd, so emit them next to the binary.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders) # slangc won't create it
-foreach(_shader slang sky_clouds)
+foreach(_shader slang sky_clouds outline)
   add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/${_shader}.spv
     COMMAND $ENV{VULKAN_SDK}/bin/slangc${CMAKE_EXECUTABLE_SUFFIX}

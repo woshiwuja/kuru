@@ -25,7 +25,23 @@ struct Graphics {
   // to what the device actually supports and stores that in msaaSamples.
   uint32_t requestedMsaa = 4;
   vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
+  // Normal + view-distance G-buffer for the outline pass
+  // (assets/shaders/outline.slang). Single-sampled and separate from the main
+  // target: RenderPlugin fills it in a prepass before the main pass begins,
+  // then samples it inside that pass, which an attachment of the pass itself
+  // could not be.
+  vk::raii::Image normalImage = nullptr;
+  vk::raii::DeviceMemory normalImageMemory = nullptr;
+  vk::raii::ImageView normalImageView = nullptr;
+  vk::raii::Image normalDepthImage = nullptr;
+  vk::raii::DeviceMemory normalDepthImageMemory = nullptr;
+  vk::raii::ImageView normalDepthImageView = nullptr;
+  static constexpr vk::Format normalFormat = vk::Format::eR16G16B16A16Sfloat;
   vk::raii::Sampler sampler = nullptr;
+  // Clamped, unfiltered sampler for the G-buffer: the outline taps neighbouring
+  // texels directly, so repeat wrapping would wrap edges around the screen and
+  // linear filtering would blur the discontinuities it is looking for.
+  vk::raii::Sampler gbufferSampler = nullptr;
   uint32_t framesInFlight = MAX_FRAMES_IN_FLIGHT;
   bool framebufferResized = false;
   void init();
@@ -39,6 +55,7 @@ struct Graphics {
   void chooseSwapSurfaceFormat(
       const std::vector<vk::SurfaceFormatKHR> &availableFormats);
   void createDepthResources();
+  void createNormalResources();
   void createColorResources();
   void chooseMsaaSamples();
   vk::Format findSupportedFormat(const std::vector<vk::Format> &candidates,
@@ -54,5 +71,6 @@ struct Graphics {
   vk::raii::ImageView createImageView(vk::raii::Image &image, vk::Format format,
                                       vk::ImageAspectFlags aspectFlags);
   void createTextureSampler();
+  void createGbufferSampler();
 };
 } // namespace KR

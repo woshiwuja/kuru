@@ -83,6 +83,7 @@ void Graphics::recreateSwapChain() {
     createImageViews();
     createColorResources();
     createDepthResources();
+    createNormalResources();
 }
 
 void Graphics::createImageViews() {
@@ -133,6 +134,30 @@ void Graphics::createDepthResources() {
                 depthImageMemory, msaaSamples);
     depthImageView = createImageView(depthImage, depthFormat,
                                      vk::ImageAspectFlagBits::eDepth);
+}
+
+void Graphics::createNormalResources() {
+    // Written by RenderPlugin's prepass, sampled by the outline pass. 1x: it is
+    // read as a texture, and resolving it would average normals across a
+    // silhouette, blunting exactly the discontinuity the outline looks for.
+    createImage(swapChainExtent.width, swapChainExtent.height, normalFormat,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment |
+                    vk::ImageUsageFlagBits::eSampled,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, normalImage,
+                normalImageMemory, vk::SampleCountFlagBits::e1);
+    normalImageView = createImageView(normalImage, normalFormat,
+                                      vk::ImageAspectFlagBits::eColor);
+    // The prepass needs its own depth: the main one is multisampled and so
+    // can't pair with this 1x colour target.
+    vk::Format depthFormat = findDepthFormat();
+    createImage(swapChainExtent.width, swapChainExtent.height, depthFormat,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, normalDepthImage,
+                normalDepthImageMemory, vk::SampleCountFlagBits::e1);
+    normalDepthImageView = createImageView(normalDepthImage, depthFormat,
+                                           vk::ImageAspectFlagBits::eDepth);
 }
 
 void Graphics::createColorResources() {
@@ -260,6 +285,21 @@ void Graphics::createTextureSampler() {
         .compareEnable = vk::False,
         .compareOp = vk::CompareOp::eAlways};
     sampler = vk::raii::Sampler(device->device, samplerInfo);
+}
+
+void Graphics::createGbufferSampler() {
+    const auto &device = Core::Core::get()->device;
+    vk::SamplerCreateInfo samplerInfo{
+        .magFilter = vk::Filter::eNearest,
+        .minFilter = vk::Filter::eNearest,
+        .mipmapMode = vk::SamplerMipmapMode::eNearest,
+        .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+        .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+        .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+        .anisotropyEnable = vk::False,
+        .compareEnable = vk::False,
+        .compareOp = vk::CompareOp::eAlways};
+    gbufferSampler = vk::raii::Sampler(device->device, samplerInfo);
 }
 
 bool Graphics::hasStencilComponent(vk::Format format) {

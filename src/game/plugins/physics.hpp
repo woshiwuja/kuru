@@ -1,8 +1,6 @@
 #pragma once
 #include <Kuru.h>
 #include <Jolt/Jolt.h>
-#include "Jolt/Math/Vec3.h"
-#include "glm/ext/vector_float3.hpp"
 #include "transform.hpp"
 #include "Jolt/Physics/Body/BodyCreationSettings.h"
 #include "Jolt/Physics/Body/BodyID.h"
