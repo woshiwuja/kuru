@@ -41,7 +41,6 @@ int main()
 		app.addPlugin(std::make_unique<InspectorPlugin>());
 		app.addPlugin(std::make_unique<StatPlugin>());
 		app.addPlugin(std::make_unique<InventoryPlugin>());
-		app.addPlugin(std::make_unique<InventoryPlugin>());
 		app.addPlugin(std::make_unique<NamePlugin>());
 		app.init();
 		app.run();

@@ -398,16 +398,26 @@ void RenderPlugin::createSkyResources() {
 }
 
 void RenderPlugin::update(entt::registry &reg) {
+  auto *core = Core::get();
   updateUniforms(reg);
   updateSkyUniforms(reg);
   drawSky(reg); // first: meshes should draw over it, not the other way round
   drawMeshes(reg);
+  ImGui::ShowDemoWindow();
+  if (ImGui::Begin("Scene")) {
+    ImGui::Text("%.1f fps (%.2f ms)", 1.0f / std::max(core->deltaTime, 1e-6f),
+                core->deltaTime * 1000.0f);
+    ImGui::Text("drawables: %zu", reg.view<MeshRef>().size());
+    ImGui::Text("swapchain: %ux%u", core->graphics->swapChainExtent.width,
+                core->graphics->swapChainExtent.height);
+  }
+  ImGui::End();
 }
 
 void RenderPlugin::spawn(entt::registry &reg, entt::entity entity,
                          std::shared_ptr<Mesh> mesh,
-                         std::shared_ptr<Texture> texture,
-                         glm::vec4 params, Transform transform) {
+                         std::shared_ptr<Texture> texture, glm::vec4 params,
+                         Transform transform) {
   assert(mesh);
   if (!reg.all_of<Transform>(entity)) {
     reg.emplace<Transform>(entity, transform);
@@ -461,7 +471,8 @@ void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
         core->device->device.allocateDescriptorSets(allocInfo);
 
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      vk::DescriptorBufferInfo bufferInfo{.buffer = *renderable.uniformBuffers[i],
+      vk::DescriptorBufferInfo bufferInfo{.buffer =
+                                              *renderable.uniformBuffers[i],
                                           .offset = 0,
                                           .range = sizeof(UniformBufferObject)};
       vk::DescriptorImageInfo imageInfo{
@@ -510,8 +521,9 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
     if (lightCount >= MAX_LIGHTS) {
       break;
     }
-    lights[lightCount++] = GPULight{.direction = glm::vec4(light.direction, 0.0f),
-                                    .color = glm::vec4(light.color, 0.0f)};
+    lights[lightCount++] =
+        GPULight{.direction = glm::vec4(light.direction, 0.0f),
+                 .color = glm::vec4(light.color, 0.0f)};
   }
 
   for (auto [entity, transform, material, renderable] :
@@ -536,20 +548,18 @@ void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
   commandBuffer.bindIndexBuffer(*mesh.indexBuffer, 0, vk::IndexType::eUint32);
 
   if (mesh.submeshes.empty()) {
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *layout,
-                                     0,
-                                     *renderable.descriptorSets[0][frameIndex],
-                                     nullptr);
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *layout, 0,
+        *renderable.descriptorSets[0][frameIndex], nullptr);
     commandBuffer.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
     return;
   }
 
   for (size_t s = 0; s < mesh.submeshes.size(); s++) {
     const SubMesh &sub = mesh.submeshes[s];
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *layout,
-                                     0,
-                                     *renderable.descriptorSets[s][frameIndex],
-                                     nullptr);
+    commandBuffer.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics, *layout, 0,
+        *renderable.descriptorSets[s][frameIndex], nullptr);
     commandBuffer.drawIndexed(sub.indexCount, 1, sub.indexOffset, 0, 0);
   }
 }
@@ -585,7 +595,7 @@ void RenderPlugin::updateSkyUniforms(entt::registry &reg) {
     return;
   }
   const auto &frame = reg.ctx().get<FrameContext>();
-  skyTime += Core::get()->deltaTime*.1f;
+  skyTime += Core::get()->deltaTime * .1f;
   // Rotation only: dropping the view matrix's translation is what keeps the
   // sky from shifting as the camera moves, while still rotating with it.
   glm::mat4 viewRotOnly = glm::mat4(glm::mat3(frame.view));

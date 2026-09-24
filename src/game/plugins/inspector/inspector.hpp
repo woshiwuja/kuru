@@ -31,14 +31,6 @@ struct InspectorPlugin : public Plugin {
       }
       EndChild();
     }
-    ImGui::ShowDemoWindow();
-    if (ImGui::Begin("Scene")) {
-      ImGui::Text("%.1f fps (%.2f ms)", 1.0f / std::max(core->deltaTime, 1e-6f),
-                  core->deltaTime * 1000.0f);
-      ImGui::Text("drawables: %zu", r.view<MeshRef>().size());
-      ImGui::Text("swapchain: %ux%u", core->graphics->swapChainExtent.width,
-                  core->graphics->swapChainExtent.height);
-    }
     End();
   }
 
