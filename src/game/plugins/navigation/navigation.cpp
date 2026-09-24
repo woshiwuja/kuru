@@ -1,12 +1,12 @@
 #include "navigation.hpp"
 #include <Kuru.h>
-#include "camera.hpp"
+#include "../camera/camera.hpp"
 #include "core/core.hpp"
-#include "map.hpp"
+#include "../map/map.hpp"
 #include "plugin/plugin.hpp"
-#include "plugins.hpp"
-#include "render.hpp"
-#include "transform.hpp"
+#include "../plugins.hpp"
+#include "../render/render.hpp"
+#include "../transform/transform.hpp"
 #include <DetourAlloc.h>
 #include <DetourNavMeshBuilder.h>
 #include <Recast.h>

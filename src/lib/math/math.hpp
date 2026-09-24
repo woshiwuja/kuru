@@ -2,7 +2,6 @@
 #include "glm/glm.hpp"
 #include <imgui.h>
 #include "Jolt/Jolt.h"
-#include "Jolt/Math/Real.h"
 namespace KR {
 struct vec2 {
   double x = 0;
@@ -19,6 +18,17 @@ struct vec3 {
   operator JPH::RVec3() const {
     return JPH::RVec3(double(x), double(y), double(z));
   }
+  KR::vec3& operator +=(glm::vec3 v){
+      x+=v.x;
+      y+=v.y;
+      z+=v.z;
+      return *this;
+  }
+  KR::vec3 operator +(glm::vec3 v){
+      auto new_v = *this;
+      new_v += v;
+      return new_v;
+  };
 };
 
 inline float lenght(vec2 v) { return sqrt(v.x * v.x + v.y * v.y); }

@@ -1,7 +1,6 @@
 #pragma once
-#include "entt/entity/fwd.hpp"
+#include "entt/entt.hpp"
 #include "glm/glm.hpp"
-#include "glm/gtc/quaternion.hpp"
 #include "imgui.h"
 #include <Kuru.h>
 

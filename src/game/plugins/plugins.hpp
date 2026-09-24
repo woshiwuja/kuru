@@ -2,7 +2,7 @@
 // Helpers shared by the game plugins. Not a plugin itself, and not a place to
 // register them: each plugin is standalone and main() decides which ones run.
 #include <Kuru.h>
-#include "render.hpp"
+#include "render/render.hpp"
 #include <entt/entt.hpp>
 #include <memory>
 #include <string>

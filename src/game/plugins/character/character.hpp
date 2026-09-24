@@ -5,11 +5,12 @@
 #include <format>
 #include <string>
 #include <Kuru.h>
-#include "name.hpp"
+#include "../name/name.hpp"
 #include <imgui.h>
 
 using namespace KR;
-struct Character {};
+struct Character {
+};
 
 struct CharacterPlugin : public Plugin {
   void init(entt::registry &r) override {

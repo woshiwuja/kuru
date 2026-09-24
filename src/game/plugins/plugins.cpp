@@ -1,5 +1,5 @@
 #include "plugins.hpp"
-#include "mesh_registry.hpp"
+#include "render/mesh_registry.hpp"
 
 using namespace KR;
 

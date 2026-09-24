@@ -1,6 +1,6 @@
 #pragma once
 #include "entt/entt.hpp"
-#include "default.hpp"
+#include "../default.hpp"
 #include "plugin/plugin.hpp"
 #include <cstdint>
 using namespace KR;

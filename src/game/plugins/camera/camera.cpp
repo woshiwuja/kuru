@@ -8,7 +8,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <iostream>
-#include "physics.hpp" // glmVecToJPH
+#include "../physics/physics.hpp" // glmVecToJPH
 
 using namespace KR;
 

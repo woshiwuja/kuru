@@ -1,7 +1,7 @@
 #pragma once
-#include "camera.hpp"
+#include "../camera/camera.hpp"
 #include <Kuru.h>
-#include "raycast.hpp"
+#include "physics/raycast.hpp"
 #include "entt/entity/fwd.hpp"
 
 using namespace KR;

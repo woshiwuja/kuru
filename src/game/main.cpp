@@ -1,18 +1,19 @@
 #include <Kuru.h>
-#include "plugins/camera.hpp"
-#include "plugins/character.hpp"
-#include "plugins/controller.hpp"
-#include "plugins/inspector.hpp"
-#include "plugins/inventory.hpp"
-#include "plugins/lighting.hpp"
-#include "plugins/map.hpp"
-#include "plugins/mesh_registry.hpp"
-#include "plugins/navigation.hpp"
-#include "plugins/physics.hpp"
-#include "plugins/render.hpp"
-#include "plugins/ui.hpp"
+#include "plugins/camera/camera.hpp"
+#include "plugins/character/character.hpp"
+#include "plugins/character/controller.hpp"
+#include "plugins/inspector/inspector.hpp"
+#include "plugins/inventory/inventory.hpp"
+#include "plugins/lighting/lighting.hpp"
+#include "plugins/map/map.hpp"
+#include "plugins/render/mesh_registry.hpp"
+#include "plugins/navigation/navigation.hpp"
+#include "plugins/outline/outline.hpp"
+#include "plugins/physics/physics.hpp"
+#include "plugins/render/render.hpp"
+#include "plugins/ui/ui.hpp"
 #include "plugins/default.hpp"
-#include "plugins/physics.hpp"
+#include "plugins/physics/physics.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -29,6 +30,7 @@ int main()
 		app.addPlugin(std::make_unique<CameraPlugin>());
 		app.addPlugin(std::make_unique<LightingPlugin>());
 		app.addPlugin(std::make_unique<RenderPlugin>());
+		app.addPlugin(std::make_unique<OutlinePlugin>()); // after RenderPlugin: borrows its layout, draws over its meshes
 		app.addPlugin(std::make_unique<TransformPlugin>());
 		app.addPlugin(std::make_unique<DefaultPlugin>());
 		app.addPlugin(std::make_unique<UIPlugin>());

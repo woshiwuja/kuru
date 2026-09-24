@@ -5,10 +5,10 @@
 #include "Jolt/Physics/Body/BodyCreationSettings.h"
 #include "entt/entity/entity.hpp"
 #include "entt/entity/fwd.hpp"
-#include "character.hpp"
+#include "character/character.hpp"
 #include "plugins.hpp"
-#include "stats.hpp"
-#include "transform.hpp"
+#include "character/stats.hpp"
+#include "transform/transform.hpp"
 #include <format>
 #include <string>
 

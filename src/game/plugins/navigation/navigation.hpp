@@ -11,7 +11,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
-#include "mesh_registry.hpp"
+#include "../render/mesh_registry.hpp"
 
 using namespace KR;
 

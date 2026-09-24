@@ -2,7 +2,7 @@
 #include <Kuru.h>
 #include "entt/entity/fwd.hpp"
 #include "imgui.h"
-#include "render.hpp"
+#include "../render/render.hpp"
 
 using namespace KR;
 
@@ -36,17 +36,6 @@ void UIPlugin::end(entt::registry &reg) {
 }
 
 void UIPlugin::update(entt::registry &reg) {
-  const auto *core = Core::get();
-  ImGui::ShowDemoWindow();
-  //ImGui::ShowStyleEditor();
-  if (ImGui::Begin("Scene")) {
-    ImGui::Text("%.1f fps (%.2f ms)", 1.0f / std::max(core->deltaTime, 1e-6f),
-                core->deltaTime * 1000.0f);
-    ImGui::Text("drawables: %zu", reg.view<MeshRef>().size());
-    ImGui::Text("swapchain: %ux%u", core->graphics->swapChainExtent.width,
-                core->graphics->swapChainExtent.height);
-  }
-  ImGui::End();
 }
 
 ImFont *findFont(const char *name){

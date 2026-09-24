@@ -1,8 +1,8 @@
 #pragma once
 #include <Kuru.h>
-#include "plugins.hpp"
-#include "render.hpp"
-#include "mesh_registry.hpp"
+#include "../plugins.hpp"
+#include "../render/render.hpp"
+#include "../render/mesh_registry.hpp"
 #include "entt/entity/fwd.hpp"
 #include "Recast.h"
 #include <Jolt/Jolt.h>
@@ -11,17 +11,16 @@
 #include <cmath>
 #include <limits>
 #include <vector>
-#include "transform.hpp"
+#include "../transform/transform.hpp"
 
 using namespace KR;
 
 struct Map {};
 struct MapPlugin : public Plugin {
     void init(entt::registry &reg)override{
-        auto &p = Core::get()->physicsManager;
-        // Render Transform and the Jolt heightfield have to use the same
-        // factor, or you fall through / stand on invisible ground.
-        constexpr float mapScale = 1.0f;
+        // The heightfield is built in raw mesh units; PhysicsPlugin scales the
+        // shape from this Transform, so the map resizes from one place.
+        constexpr float mapScale = 2.0f;
         const std::string mapPath = "models/testmap.glb";
         entt::entity mapEntity = reg.create();
 		spawn(reg, mapEntity, mapPath,
@@ -90,8 +89,8 @@ struct MapPlugin : public Plugin {
 
 		JPH::HeightFieldShapeSettings settings(
 		heights.data(),
-		JPH::Vec3(minX * mapScale, 0.0f, minZ * mapScale),
-		JPH::Vec3(cellX * mapScale, mapScale, cellZ * mapScale),
+		JPH::Vec3(minX, 0.0f, minZ),
+		JPH::Vec3(cellX, 1.0f, cellZ),
 		samples
 		);
 		JPH::Shape::ShapeResult result = settings.Create();
@@ -99,16 +98,15 @@ struct MapPlugin : public Plugin {
 		{
 		throw("seh rotta");
 		}
-		JPH::ShapeRefC heightFieldShape = result.Get();
-		// 2. Create the shape settings
-		JPH::BodyCreationSettings bodySettings(
-    heightFieldShape,
-    JPH::RVec3(0, 0, 0),          // position
-    JPH::Quat::sIdentity(),       // rotation
-    JPH::EMotionType::Static,     // heightfields are always static
-    KR::NON_MOVING            // your object layer for static geometry
+		// PhysicsPlugin creates the body and keeps the BodyID on the entity, so
+		// later Transform edits can find it again.
+		reg.emplace<JPH::BodyCreationSettings>(
+		mapEntity,
+		result.Get(),
+		JPH::RVec3(0, 0, 0),          // position
+		JPH::Quat::sIdentity(),       // rotation
+		JPH::EMotionType::Static,     // heightfields are always static
+		KR::NON_MOVING            // your object layer for static geometry
 		);
-		JPH::BodyInterface &bodyInterface = p->bodies();
-		JPH::BodyID heightFieldID = bodyInterface.CreateAndAddBody(bodySettings, JPH::EActivation::Activate);
     }
 };
