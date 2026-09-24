@@ -101,7 +101,7 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
   std::vector<SubMesh> submeshes;
-  // World height range, fed to the terrain shading in the UBO.
+  // World height range, used by MapPlugin to build the physics heightfield.
   float minY = std::numeric_limits<float>::max();
   float maxY = std::numeric_limits<float>::lowest();
 

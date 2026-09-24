@@ -1,6 +1,5 @@
 #pragma once
 #include <Kuru.h>
-#include "../plugins.hpp"
 #include "../render/render.hpp"
 #include "../render/mesh_registry.hpp"
 #include "entt/entity/fwd.hpp"
@@ -23,8 +22,7 @@ struct MapPlugin : public Plugin {
         constexpr float mapScale = 2.0f;
         const std::string mapPath = "models/testmap.glb";
         entt::entity mapEntity = reg.create();
-		spawn(reg, mapEntity, mapPath,
-		      "textures/viking_room.ktx2", {0.0f, 0.0f, 1.0f, 0.0f},
+		spawn(reg, mapEntity, mapPath, "textures/viking_room.ktx2", {},
 		      Transform{.scale = glm::vec3(mapScale)});
 		reg.emplace<Map>(mapEntity, mapPath);
 		reg.emplace<Sky>(reg.create());

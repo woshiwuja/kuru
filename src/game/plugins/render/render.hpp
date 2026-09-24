@@ -2,6 +2,7 @@
 #include <Kuru.h>
 #include <glm/glm.hpp>
 #include <memory>
+#include <string>
 #include <vulkan/vulkan_raii.hpp>
 #include "../transform/transform.hpp"
 
@@ -13,8 +14,9 @@ struct MeshRef {
 
 struct MaterialRef {
 	std::shared_ptr<Texture> texture;
-	// x: 1 = procedural terrain shading, 0 = plain textured mesh. y, z: world height range.
-	glm::vec4 params = {0.0f, 0.0f, 1.0f, 0.0f};
+	// x: 2 = debug overlay (flat vertex color, y = its alpha), 0 = plain
+	// textured mesh. Matches `material` in shaders/slang.slang.
+	glm::vec4 params = {0.0f, 0.0f, 0.0f, 0.0f};
 };
 
 // Per-entity GPU binding state, one slot per frame in flight. Derived from
@@ -122,3 +124,25 @@ struct RenderPlugin : Plugin {
 void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
                     const vk::raii::PipelineLayout &layout, uint32_t frameIndex,
                     const Mesh &mesh, const Renderable &renderable);
+
+inline RenderPlugin &renderer(entt::registry &reg) {
+  auto *plugin = reg.ctx().find<RenderPlugin *>();
+  assert(plugin != nullptr && *plugin != nullptr &&
+         "RenderPlugin must be registered and initialised first");
+  return **plugin;
+}
+
+// Textures are shared between entities, so they go through a cache keyed by
+// path, same as meshes (getMesh, in mesh_registry.hpp). Created on first use.
+std::shared_ptr<Texture> getTexture(entt::registry &reg,
+                                    const std::string &path);
+
+// Loads mesh and texture through their caches and attaches them to `entity`,
+// which the caller creates - so a mesh can be added to an entity that already
+// carries other components (e.g. a Character), instead of always landing on
+// a fresh entity of its own. texturePath can be empty when the mesh carries
+// its own embedded texture. transform is only applied if `entity` doesn't
+// already carry one.
+void spawn(entt::registry &reg, entt::entity entity,
+           const std::string &meshPath, const std::string &texturePath,
+           glm::vec4 params = {}, Transform transform = {});

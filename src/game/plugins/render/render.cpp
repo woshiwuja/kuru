@@ -1,5 +1,6 @@
 #include "render.hpp"
 #include "../lighting/lighting.hpp"
+#include "mesh_registry.hpp"
 #include <Kuru.h>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
@@ -638,4 +639,36 @@ void RenderPlugin::drawSky(entt::registry &reg) {
       *skyDescriptorSets[frame.frameIndex], nullptr);
   commandBuffer.draw(
       3, 1, 0, 0); // no vertex/index buffer: vertMain synthesizes the triangle
+}
+
+namespace {
+struct TextureLoader {
+  using result_type = std::shared_ptr<Texture>;
+  result_type operator()(const std::string &path) const {
+    return loadTexture(path);
+  }
+};
+using TextureCache = entt::resource_cache<Texture, TextureLoader>;
+} // namespace
+
+std::shared_ptr<Texture> getTexture(entt::registry &reg,
+                                    const std::string &path) {
+  auto *cache = reg.ctx().find<TextureCache>();
+  if (cache == nullptr) {
+    cache = &reg.ctx().emplace<TextureCache>();
+  }
+  return cache->load(entt::hashed_string::value(path.c_str()), path)
+      .first->second.handle();
+}
+
+void spawn(entt::registry &reg, entt::entity entity,
+           const std::string &meshPath, const std::string &texturePath,
+           glm::vec4 params, Transform transform) {
+  // Fallback for any submesh whose glTF primitive had no material of its own
+  // (or for a mesh with none at all) - RenderPlugin::attach only reaches for
+  // this when a submesh's own texture is null. An empty texturePath still
+  // resolves, to Texture::load's fuchsia placeholder.
+  std::shared_ptr<Texture> fallbackTexture = getTexture(reg, texturePath);
+  renderer(reg).spawn(reg, entity, getMesh(reg, meshPath).handle(),
+                      std::move(fallbackTexture), params, transform);
 }

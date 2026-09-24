@@ -1,5 +1,5 @@
 #include "outline.hpp"
-#include "../plugins.hpp"
+#include "../render/render.hpp"
 
 using namespace KR;
 

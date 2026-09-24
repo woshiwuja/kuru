@@ -72,7 +72,7 @@ struct UniformBufferObject
 	alignas(16) glm::mat4 model;
 	alignas(16) glm::mat4 view;
 	alignas(16) glm::mat4 proj;
-	// x: 1 = procedural terrain shading, 0 = plain textured mesh. y, z: world height range.
+	// x: 2 = debug overlay (flat vertex color, y = its alpha), 0 = textured mesh.
 	alignas(16) glm::vec4 material;
 	alignas(16) GPULight lights[MAX_LIGHTS];
 	uint32_t lightCount = 0;

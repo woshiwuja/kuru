@@ -1,11 +1,6 @@
 // Textured model: MVP transform in the vertex stage, shading in the fragment stage.
 // Bindings and vertex locations must match Core::createDescriptorSetLayout and
 // Vertex::getAttributeDescriptions in src/main.cpp.
-//
-// Terrain shading is the height/slope material stack from Fewes' raymarched terrain
-// (https://www.shadertoy.com/view/7ljcRW), applied to the rasterised heightfield mesh.
-// The raymarching, erosion simulation, water and atmosphere are not here - they need
-// offscreen passes this renderer does not have yet.
 
 // Must match MAX_LIGHTS in src/lib/common/vertex.hpp.
 static const uint MAX_LIGHTS = 4;
@@ -20,7 +15,7 @@ struct UniformBufferObject {
     float4x4 model;
     float4x4 view;
     float4x4 proj;
-    // x: 1 = procedural terrain, 0 = plain textured mesh. y, z: world height range.
+    // x: 2 = debug overlay (flat vertex color, y = its alpha), 0 = textured mesh.
     float4 material;
     GPULight lights[MAX_LIGHTS];
     uint lightCount;
@@ -35,19 +30,12 @@ struct UniformBufferObject {
 // RayQuery.
 
 // Tuning knobs. Nothing here is measured, so expect to nudge them.
-static const float3 SKY_COLOR    = float3(0.35, 0.48, 0.72);
-static const float3 CLIFF_COLOR  = float3(0.30, 0.28, 0.26);
-static const float3 DIRT_COLOR   = float3(0.26, 0.19, 0.12);
-static const float3 SAND_COLOR   = float3(0.62, 0.55, 0.38);
-static const float3 GRASS_COLOR1 = float3(0.11, 0.19, 0.07);
-static const float3 GRASS_COLOR2 = float3(0.23, 0.29, 0.11);
-static const float3 SNOW_COLOR   = float3(0.90, 0.92, 0.95);
+static const float3 SKY_COLOR = float3(0.35, 0.48, 0.72);
 
 struct VSOutput {
     float4 position : SV_Position;
     float3 color;
     float2 uv;
-    float3 worldPos;
     float3 worldNormal;
 };
 
@@ -57,7 +45,6 @@ VSOutput vertMain(float3 position, float3 color, float2 uv, float3 normal) {
     VSOutput output;
     float4 world = mul(ubo.model, float4(position, 1.0));
     output.position = mul(ubo.proj, mul(ubo.view, world));
-    output.worldPos = world.xyz;
     output.color = color;
     output.uv = uv;
     // Upper 3x3 of the model matrix: fine as long as scale stays uniform,
@@ -79,52 +66,19 @@ float3 tonemapACES(float3 x) {
 // kernel over a normal+distance prepass - so nothing shades edges in this file.
 
 [shader("fragment")]
-float4 fragMain(float3 color, float2 uv, float3 worldPos, float3 worldNormal) : SV_Target {
+float4 fragMain(float3 color, float2 uv, float3 worldNormal) : SV_Target {
     // Debug overlay (material.x == 2): flat vertex color, alpha from material.y.
     // No lighting, no texture, no shadow ray - it's a diagnostic, not a surface.
     if (ubo.material.x > 1.5) {
         return float4(color, ubo.material.y);
     }
 
-    // material.x comes from the UBO, so this branch is uniform across the draw and
-    // sampling inside it is safe.
-    if (ubo.material.x < 0.5) {
-        float3 n = normalize(worldNormal);
-        float3 albedo = color * texSampler.Sample(uv).rgb;
-        // Same ambient+sun split as terrain shading below, minus the rim term:
-        // rim reads as a terrain-scale atmospheric effect, not something a
-        // small textured prop needs.
-        float3 lit = albedo * SKY_COLOR * (0.5 + 0.5 * n.y);
-        for (uint i = 0; i < ubo.lightCount; i++) {
-            lit += albedo * ubo.lights[i].color.xyz * saturate(dot(n, ubo.lights[i].direction.xyz));
-        }
-        return float4(tonemapACES(lit), 1.0);
-    }
-
-    // The heightfield terrain carries no normal attribute of its own, so take
-    // the face normal from screen-space derivatives instead. Must be outside
-    // any branch: derivatives in non-uniform control flow are undefined.
-    // Faceted, but at 257x257 the facets are sub-pixel at distance.
-    float3 normal = normalize(cross(ddx(worldPos), ddy(worldPos)));
-    normal = normal.y < 0.0 ? -normal : normal;   // a heightfield always faces up
-
-    float h = saturate((worldPos.y - ubo.material.y) / max(1e-4, ubo.material.z - ubo.material.y));
-    float slope = 1.0 - normal.y;
-
-    // The original perturbs these thresholds with a detail texture. Without one they are
-    // clean bands; a procedural noise on h and slope is the upgrade if that reads too neatly.
-    float3 diffuse = lerp(GRASS_COLOR1, GRASS_COLOR2, smoothstep(0.35, 0.65, h));
-    diffuse = lerp(diffuse, SAND_COLOR, smoothstep(0.12, 0.02, h));
-    diffuse = lerp(diffuse, CLIFF_COLOR, smoothstep(0.35, 0.62, slope));
-    diffuse = lerp(diffuse, DIRT_COLOR, smoothstep(0.20, 0.45, slope) * smoothstep(0.75, 0.30, h));
-    diffuse = lerp(diffuse, SNOW_COLOR, smoothstep(0.82, 0.93, h) * smoothstep(0.55, 0.20, slope));
-
-    // Ambient from a sky gradient, direct light, and a crude single bounce.
-    float3 lit = diffuse * SKY_COLOR * (0.5 + 0.5 * normal.y);
+    float3 n = normalize(worldNormal);
+    float3 albedo = color * texSampler.Sample(uv).rgb;
+    // Ambient from a sky gradient plus one unoccluded term per light.
+    float3 lit = albedo * SKY_COLOR * (0.5 + 0.5 * n.y);
     for (uint i = 0; i < ubo.lightCount; i++) {
-        lit += diffuse * ubo.lights[i].color.xyz * saturate(dot(normal, ubo.lights[i].direction.xyz));
-        // Crude single bounce off the ground, from the mirrored light direction.
-        lit += diffuse * ubo.lights[i].color.xyz * saturate(dot(normal, ubo.lights[i].direction.xyz * float3(1.0, -1.0, 1.0))) * 0.15;
+        lit += albedo * ubo.lights[i].color.xyz * saturate(dot(n, ubo.lights[i].direction.xyz));
     }
     return float4(tonemapACES(lit), 1.0);
 }
