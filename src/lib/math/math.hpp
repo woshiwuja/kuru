@@ -18,35 +18,20 @@ struct vec3 {
   operator JPH::RVec3() const {
     return JPH::RVec3(double(x), double(y), double(z));
   }
-  KR::vec3& operator +=(glm::vec3 v){
+  vec3& operator +=(glm::vec3 v){
       x+=v.x;
       y+=v.y;
       z+=v.z;
       return *this;
   }
-  KR::vec3 operator +(glm::vec3 v){
+  vec3 operator +(glm::vec3 v){
       auto new_v = *this;
       new_v += v;
       return new_v;
   };
+  void normalize();
 };
 
-inline float lenght(vec2 v) { return sqrt(v.x * v.x + v.y * v.y); }
-inline float lenght(vec3 v) { return sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
-inline vec2 normalize(vec2 v) {
-  auto l = lenght(v);
-  if (l < 1e-12f)
-    return vec2{0.f, 0.f};
-  vec2 n = vec2(v.x / l, v.y / l);
-  return n;
-}
-inline vec3 normalize(vec3 v) {
-  auto l = lenght(v);
-  if (l < 1e-12f)
-    return vec3{0.f, 0.f, 0.f};
-  vec3 n = vec3(v.x / l, v.y / l, v.z / l);
-  return n;
-}
 struct quat {
   double x, y, z, w = 0;
   quat(float radians) {}

@@ -15,15 +15,12 @@
 using namespace KR;
 
 // The entity the inspector is looking at.
-struct Selected {};
 
 struct DefaultPlugin : public Plugin {
   void init(entt::registry &reg) override {
     entt::entity e = reg.create();
     reg.emplace<Character>(e);
     reg.emplace<Name>(e, Name{.fname="coglione"});
-    reg.emplace<Strenght>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
-    reg.emplace<Vitality>(e,Stat{.level = 1, .currentExperience = 0,  .experienceToNext = calculateRequiredXP(1, 2)});
     auto &t = reg.emplace<Transform>(e);
     t.position = {0, 100, 0};
     t.rotation = glm::quat(glm::vec3{0.7, 0.7, 0}); // da euler radianti

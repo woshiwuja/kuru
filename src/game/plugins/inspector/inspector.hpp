@@ -1,5 +1,4 @@
 #pragma once
-#include "../default.hpp" // Selected
 #include <Kuru.h>
 
 using namespace KR;

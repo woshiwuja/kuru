@@ -3,6 +3,9 @@
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
 #include <Jolt/Jolt.h>
+#if defined(__GNUC__) || defined(__clang__)
+#include <cxxabi.h>
+#endif
 namespace KR {
 
     inline JPH::Vec3 glmVecToJPH(glm::vec3 v){
@@ -31,4 +34,26 @@ void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 std::string assetPath(const std::string &relative);
 
 std::vector<char> readFile(const std::string &filename);
+#if defined(__GNUC__) || defined(__clang__)
+inline std::string demangle(const char* mangled) {
+    int status = 0;
+    std::unique_ptr<char, void(*)(void*)> res(
+        abi::__cxa_demangle(mangled, nullptr, nullptr, &status), std::free);
+    return (status == 0) ? res.get() : mangled;
+}
+inline const char* cdemangle(const char* mangled) {
+    thread_local std::string buf;
+    int status = 0;
+    std::unique_ptr<char, void(*)(void*)> res(
+        abi::__cxa_demangle(mangled, nullptr, nullptr, &status), std::free);
+    buf = (status == 0) ? res.get() : mangled;
+    return buf.c_str();
+}
+#else
+inline std::string demangle(const char* mangled) {
+    return mangled; // MSVC: typeid().name() è già human-readable
+}
+#endif
+
+struct Selected {};
 } // namespace KR
