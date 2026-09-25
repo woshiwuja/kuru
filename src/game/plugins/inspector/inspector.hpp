@@ -1,4 +1,5 @@
 #pragma once
+#include "imgui.h"
 #include <Kuru.h>
 
 using namespace KR;
@@ -29,6 +30,9 @@ struct InspectorPlugin : public Plugin {
         }
       }
       EndChild();
+    }
+    if (Button("New Entity")){
+        r.create();
     }
     End();
   }

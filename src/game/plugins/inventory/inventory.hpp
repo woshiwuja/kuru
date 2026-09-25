@@ -30,18 +30,7 @@ struct InventoryPlugin : public KR::Plugin {
     using namespace ImGui;
     if (Begin("Inventory", &open)) {
     for (auto [e, inventory] : r.view<Selected, Inventory>().each()) {
-      if (BeginTable("Inventory", inventory.width)) {
-        for (int i = 0; i < inventory.width * inventory.height; i++) {
-          if (i % inventory.width == 0){
-              TableNextRow();
-              TableSetColumnIndex(i % inventory.width);
-              PushID(i);
-              Button("", vec2(64, 64));
-              PopID();
-          }
-        }
-        EndTable();
-      }
+
     }
     }
     End();

@@ -24,7 +24,6 @@ using namespace KR;
 
 namespace {
 
-constexpr int MAX_AGENTS = 128; // come CrowdTool.h:70
 
 // Recast vuole xyz stretti e indici int. Vertex e' 44 byte con normale e uv in
 // mezzo, quindi la geometria va ricompattata: una volta sola, al build.
@@ -235,7 +234,7 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   }
 
   nav.crowd = dtAllocCrowd();
-  if (!nav.crowd || !nav.crowd->init(MAX_AGENTS, c.agentRadius, nav.mesh)) {
+  if (!nav.crowd || !nav.crowd->init(256, c.agentRadius, nav.mesh)) {
     throw std::runtime_error("dtCrowd::init fallita");
   }
   nav.crowd->getEditableFilter(0)->setIncludeFlags(NAV_POLY_WALK);
@@ -324,7 +323,7 @@ bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
   }
   loaded.crowd = dtAllocCrowd();
   if (loaded.crowd == nullptr ||
-      !loaded.crowd->init(MAX_AGENTS, c.agentRadius, loaded.mesh)) {
+      !loaded.crowd->init(256, c.agentRadius, loaded.mesh)) {
     return false;
   }
   loaded.crowd->getEditableFilter(0)->setIncludeFlags(NAV_POLY_WALK);
