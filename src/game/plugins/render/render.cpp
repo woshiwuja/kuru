@@ -1,6 +1,8 @@
 #include "render.hpp"
 #include "../lighting/lighting.hpp"
 #include "mesh_registry.hpp"
+#include "model/model.hpp"
+#include "plugin/plugin.hpp"
 #include <Kuru.h>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
@@ -17,6 +19,8 @@ void RenderPlugin::init(entt::registry &reg) {
   createSkyDescriptorSetLayout();
   createSkyPipeline();
   createSkyResources();
+  registerComponent<MeshRef>();
+  registerComponent<Renderable>();
 }
 
 void RenderPlugin::createDescriptorSetLayout() {
@@ -664,10 +668,6 @@ std::shared_ptr<Texture> getTexture(entt::registry &reg,
 void spawn(entt::registry &reg, entt::entity entity,
            const std::string &meshPath, const std::string &texturePath,
            glm::vec4 params, Transform transform) {
-  // Fallback for any submesh whose glTF primitive had no material of its own
-  // (or for a mesh with none at all) - RenderPlugin::attach only reaches for
-  // this when a submesh's own texture is null. An empty texturePath still
-  // resolves, to Texture::load's fuchsia placeholder.
   std::shared_ptr<Texture> fallbackTexture = getTexture(reg, texturePath);
   renderer(reg).spawn(reg, entity, getMesh(reg, meshPath).handle(),
                       std::move(fallbackTexture), params, transform);

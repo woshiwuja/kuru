@@ -139,7 +139,7 @@ void CameraPlugin::UI(entt::registry &reg){
         DragFloat("orbit sensitivity", &camera.orbitSensitivity, 0.01f,
                          0.0f, 5.0f);
         DragFloat("zoom speed", &camera.zoomSpeed, 0.01f, 0.0f, 1.0f);
-        SliderFloat("fov", &camera.fov, 10.0f, 120.0f);
+        DragFloat("fov", &camera.fov, 1.0f,1.0f, 120.0f);
       }
     }
    End();

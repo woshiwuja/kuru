@@ -59,16 +59,9 @@ PrepassOutput prepassVert(float3 position, float3 color, float2 uv, float3 norma
 
 [shader("fragment")]
 float4 prepassFrag(float3 worldPos, float3 worldNormal) : SV_Target {
-    // Same normal choice as slang.slang's fragMain: the heightfield terrain
-    // (material.x >= 0.5) carries no normal attribute, so its face normal comes
-    // from screen-space derivatives. Computed outside the branch - derivatives
-    // in non-uniform control flow are undefined.
     float3 faceNormal = normalize(cross(ddx(worldPos), ddy(worldPos)));
     faceNormal = faceNormal.y < 0.0 ? -faceNormal : faceNormal;
     float3 n = ubo.material.x < 0.5 ? normalize(worldNormal) : faceNormal;
-    // .a is the original's ray distance t. Background keeps the clear value
-    // (a unit normal with a = -1), which is what makes silhouettes show up as
-    // a large distance jump without also firing the normal term across open sky.
     return float4(n, length(mul(ubo.view, float4(worldPos, 1.0)).xyz));
 }
 

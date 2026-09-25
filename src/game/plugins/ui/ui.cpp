@@ -7,7 +7,10 @@
 using namespace KR;
 
 
-void UIPlugin::init(entt::registry &reg){}
+void UIPlugin::init(entt::registry &reg){
+    auto &style = ImGui::GetStyle();
+    setStyle(style);
+}
 void UIPlugin::start(entt::registry &reg) {
   for (const SDL_Event &event : Core::get()->eventManager->events) {
     ImGui_ImplSDL3_ProcessEvent(&event);
@@ -20,8 +23,6 @@ void UIPlugin::start(entt::registry &reg) {
   ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                ImGuiDockNodeFlags_PassthruCentralNode);
   ImGuiIO &io = ImGui::GetIO();
-  auto &style = ImGui::GetStyle();
-  setStyle(style);
 }
 
 void UIPlugin::end(entt::registry &reg) {

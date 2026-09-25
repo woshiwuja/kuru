@@ -11,8 +11,6 @@ struct RenderPlugin;
 // Matches OutlinePush in shaders/outline.slang.
 struct OutlinePushConstants {
 	glm::vec2 resolution;
-	// See the shader: world-unit distance deltas rescaled to the threshold the
-	// original Shadertoy pass was tuned against. Nudge to taste.
 	float     distScale = 1.0f;
 	float     strength  = .8f;
 };

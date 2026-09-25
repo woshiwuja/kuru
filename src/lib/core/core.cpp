@@ -128,11 +128,12 @@ void Core::initGui() {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   auto &io = ImGui::GetIO();
+  auto fontsize = 16.0f;
   io.ConfigFlags |=
       ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NoMouseCursorChange;
   for (const auto &entry : std::filesystem::directory_iterator(assetPath("fonts"))) {
       if (entry.path().extension() != ".ttf") continue;
-      io.Fonts->AddFontFromFileTTF(entry.path().c_str(), 16.0f);
+      io.Fonts->AddFontFromFileTTF(entry.path().string().c_str(), fontsize);
   }
   ImGui::StyleColorsDark();
 

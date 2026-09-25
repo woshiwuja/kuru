@@ -1,5 +1,6 @@
 #include "outline.hpp"
 #include "../render/render.hpp"
+#include "imgui.h"
 
 using namespace KR;
 
@@ -20,7 +21,13 @@ void OutlinePlugin::start(entt::registry &reg) { drawNormalPrepass(reg); }
 
 // Last in the pass: it darkens whatever the sky and the meshes left behind,
 // which registration order after RenderPlugin gives us.
-void OutlinePlugin::update(entt::registry &reg) { drawOutline(reg); }
+void OutlinePlugin::update(entt::registry &reg) {
+    drawOutline(reg);
+    ImGui::Begin("Outline");
+    ImGui::DragFloat("distance", &outlinePush.distScale, 0.01, 0.01, 1);
+    ImGui::DragFloat("strenght", &outlinePush.strength);
+    ImGui::End();
+}
 
 // ---- outline ----------------------------------------------------------------
 // assets/shaders/outline.slang, in two halves: a prepass that writes world
