@@ -18,6 +18,8 @@ using namespace KR;
 
 struct DefaultPlugin : public Plugin {
   void init(entt::registry &reg) override {
+
+    reg.emplace<DirectionalLight>(reg.create());
     entt::entity e = reg.create();
     reg.emplace<Character>(e);
     reg.emplace<Name>(e, Name{.fname="coglione"});

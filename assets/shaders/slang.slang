@@ -5,9 +5,12 @@
 // Must match MAX_LIGHTS in src/lib/common/vertex.hpp.
 static const uint MAX_LIGHTS = 4;
 
-// One LightingPlugin DirectionalLight. xyz used in both fields, w padding.
-struct GPULight {
+struct DirectionalLight {
     float4 direction;
+    float4 color;
+};
+struct PointLight{
+    float radius;
     float4 color;
 };
 
@@ -17,7 +20,10 @@ struct UniformBufferObject {
     float4x4 proj;
     // x: 2 = debug overlay (flat vertex color, y = its alpha), 0 = textured mesh.
     float4 material;
-    GPULight lights[MAX_LIGHTS];
+    float4 baseColor;
+    float4 pbr;
+    float4 cameraPos;
+    DirectionalLight lights[MAX_LIGHTS];
     uint lightCount;
 };
 
@@ -37,6 +43,8 @@ struct VSOutput {
     float3 color;
     float2 uv;
     float3 worldNormal;
+    // Camera minus fragment, unnormalized.
+    float3 viewDir;
 };
 
 // Parameters map to vertex input locations 0, 1, 2, 3 in declaration order.
@@ -52,6 +60,7 @@ VSOutput vertMain(float3 position, float3 color, float2 uv, float3 normal) {
     // scale needs the inverse-transpose instead.
     float3x3 normalMatrix = float3x3(ubo.model[0].xyz, ubo.model[1].xyz, ubo.model[2].xyz);
     output.worldNormal = normalize(mul(normalMatrix, normal));
+    output.viewDir = ubo.cameraPos.xyz - world.xyz;
     return output;
 }
 
@@ -65,20 +74,64 @@ float3 tonemapACES(float3 x) {
 // neighbouring pixels from. outline.slang does it properly now - a real 3x3
 // kernel over a normal+distance prepass - so nothing shades edges in this file.
 
+static const float PI = 3.14159265;
+
+// Cook-Torrance GGX for one direct light: GGX normal distribution, Schlick-GGX
+// geometry with the direct-lighting k, Schlick Fresnel. Returns radiance already
+// multiplied by N.L, so the caller only scales by light color.
+float3 brdf(float3 n, float3 v, float3 l, float3 albedo, float metallic, float roughness) {
+    float3 h = normalize(v + l);
+    // Clamped away from 0: a perfect mirror is a delta function no point light can hit.
+    float a  = max(roughness * roughness, 1e-3);
+    float a2 = a * a;
+    float ndoth = saturate(dot(n, h));
+    float ndotv = saturate(dot(n, v)) + 1e-4;
+    float ndotl = saturate(dot(n, l));
+
+    float denom = ndoth * ndoth * (a2 - 1.0) + 1.0;
+    float D = a2 / (PI * denom * denom);
+
+    float k = a * 0.5;
+    float G = (ndotv / (ndotv * (1.0 - k) + k)) * (ndotl / (ndotl * (1.0 - k) + k));
+
+    float3 f0 = lerp(float3(0.04), albedo, metallic);
+    float3 F  = f0 + (1.0 - f0) * pow(1.0 - saturate(dot(h, v)), 5.0);
+
+    float3 spec = D * G * F / (4.0 * ndotv * ndotl + 1e-4);
+    // Metals have no diffuse lobe, and what Fresnel reflects is not refracted.
+    float3 kd = (1.0 - F) * (1.0 - metallic);
+    return (kd * albedo / PI + spec) * ndotl;
+}
+
 [shader("fragment")]
-float4 fragMain(float3 color, float2 uv, float3 worldNormal) : SV_Target {
+float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : SV_Target {
     // Debug overlay (material.x == 2): flat vertex color, alpha from material.y.
     // No lighting, no texture, no shadow ray - it's a diagnostic, not a surface.
     if (ubo.material.x > 1.5) {
         return float4(color, ubo.material.y);
     }
 
+    float4 tex = texSampler.Sample(uv);
+    // glTF alpha mask: binary, no blending. material.w gates it, material.z is the cutoff.
+    if (ubo.material.w > 0.5 && tex.a * ubo.baseColor.a < ubo.material.z) {
+        discard;
+    }
+
     float3 n = normalize(worldNormal);
-    float3 albedo = color * texSampler.Sample(uv).rgb;
-    // Ambient from a sky gradient plus one unoccluded term per light.
-    float3 lit = albedo * SKY_COLOR * (0.5 + 0.5 * n.y);
+    float3 v = normalize(viewDir);
+    float3 albedo = color * ubo.baseColor.rgb * tex.rgb;
+    float metallic  = saturate(ubo.pbr.x);
+    float roughness = clamp(ubo.pbr.y, 0.04, 1.0);
+
+    // Stand-in for an IBL: the sky gradient lights the diffuse lobe, and a
+    // roughness-faded f0 term keeps metals reflecting sky instead of going black.
+    // Replace both with a prefiltered environment map when there is one.
+    float3 f0 = lerp(float3(0.04), albedo, metallic);
+    float3 sky = SKY_COLOR * (0.5 + 0.5 * n.y);
+    float3 lit = sky * (albedo * (1.0 - metallic) + f0 * (1.0 - roughness));
     for (uint i = 0; i < ubo.lightCount; i++) {
-        lit += albedo * ubo.lights[i].color.xyz * saturate(dot(n, ubo.lights[i].direction.xyz));
+        float3 l = normalize(ubo.lights[i].direction.xyz);
+        lit += ubo.lights[i].color.xyz * brdf(n, v, l, albedo, metallic, roughness);
     }
     return float4(tonemapACES(lit), 1.0);
 }

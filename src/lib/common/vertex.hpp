@@ -73,7 +73,15 @@ struct UniformBufferObject
 	alignas(16) glm::mat4 view;
 	alignas(16) glm::mat4 proj;
 	// x: 2 = debug overlay (flat vertex color, y = its alpha), 0 = textured mesh.
+	// z: alpha cutoff, w: 1 = alpha mask on.
 	alignas(16) glm::vec4 material;
+	// Material::color. Multiplies vertex color and the sampled texture.
+	alignas(16) glm::vec4 baseColor{1.0f};
+	// x: metallic, y: roughness. z, w unused.
+	alignas(16) glm::vec4 pbr{1.0f, 1.0f, 0.0f, 0.0f};
+	// Camera world position in xyz, w unused. Same for every entity, but this
+	// slangc has no inverse() to pull it out of `view` in the shader.
+	alignas(16) glm::vec4 cameraPos{0.0f};
 	alignas(16) GPULight lights[MAX_LIGHTS];
 	uint32_t lightCount = 0;
 };

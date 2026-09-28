@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include "../material/material.hpp"
 
 using namespace KR;
 
@@ -517,7 +518,7 @@ void NavigationPlugin::UI(entt::registry &reg) {
     }
     if (SliderFloat("alpha", &config.debugAlpha, 0.0f, 1.0f) &&
         reg.valid(debugEntity)) {
-      reg.get<MaterialRef>(debugEntity).params.y = config.debugAlpha;
+      reg.get<MaterialRef>(debugEntity).material.get()->alphaCutoff = config.debugAlpha;
     }
     ColorEdit3("color", &config.debugColor.x);
     bool overlayDirty = IsItemDeactivatedAfterEdit();

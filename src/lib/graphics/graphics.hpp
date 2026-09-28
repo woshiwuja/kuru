@@ -3,6 +3,16 @@
 #include <vulkan/vulkan_raii.hpp>
 
 namespace KR {
+    struct FrameContext {
+	const vk::raii::CommandBuffer *commandBuffer = nullptr;
+	uint32_t                       frameIndex    = 0;
+	vk::Extent2D                   extent        = {};
+	glm::mat4                      view          = glm::mat4(1.0f);
+	glm::mat4                      proj          = glm::mat4(1.0f);
+	glm::mat4                      skyRayProj    = glm::mat4(1.0f);
+	bool                           uiCapturesMouse    = false;
+	bool                           uiCapturesKeyboard = false;
+    };
 struct Graphics {
   vk::raii::SurfaceKHR surface = nullptr;
   vk::raii::SwapchainKHR swapChain = nullptr;

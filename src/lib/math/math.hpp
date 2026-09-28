@@ -1,7 +1,5 @@
 #pragma once
-#include "glm/glm.hpp"
 #include <imgui.h>
-#include "Jolt/Jolt.h"
 namespace KR {
 struct vec2 {
   double x = 0;

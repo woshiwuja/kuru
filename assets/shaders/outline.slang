@@ -31,6 +31,9 @@ struct UniformBufferObject {
     float4x4 view;
     float4x4 proj;
     float4 material;
+    float4 baseColor;
+    float4 pbr;
+    float4 cameraPos;
     GPULight lights[MAX_LIGHTS];
     uint lightCount;
 };

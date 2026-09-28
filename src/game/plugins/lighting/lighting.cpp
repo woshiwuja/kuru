@@ -1,3 +1,4 @@
+#include <Kuru.h>
 #include "lighting.hpp"
 #include "imgui.h"
 #include <format>
@@ -5,16 +6,19 @@
 using namespace KR;
 
 void LightingPlugin::init(entt::registry &reg) {
-  reg.emplace<DirectionalLight>(reg.create());
+   registerComponent<DirectionalLight>();
+   registerComponent<PointLight>();
+   registerComponent<SpotLight>();
 }
 
 void LightingPlugin::update(entt::registry &reg) {
-  auto lightView = reg.view<DirectionalLight>();
-  for (auto [e, light] : lightView.each()) {
+  for (auto [e, light] : reg.view<DirectionalLight>().each()) {
     light.direction = glm::normalize(light.direction);
   };
+
   UI(reg);
 }
+
 void LightingPlugin::UI(entt::registry &reg) {
   using namespace ImGui;
   Begin("Lights");

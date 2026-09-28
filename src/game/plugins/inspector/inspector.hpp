@@ -32,7 +32,7 @@ struct InspectorPlugin : public Plugin {
       EndChild();
     }
     if (Button("New Entity")){
-        r.create();
+        entt::entity e  = r.create();
     }
     End();
   }

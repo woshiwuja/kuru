@@ -6,17 +6,6 @@
 
 namespace KR {
 
-struct FrameContext {
-	const vk::raii::CommandBuffer *commandBuffer = nullptr;
-	uint32_t                       frameIndex    = 0;
-	vk::Extent2D                   extent        = {};
-	glm::mat4                      view          = glm::mat4(1.0f);
-	glm::mat4                      proj          = glm::mat4(1.0f);
-	glm::mat4                      skyRayProj    = glm::mat4(1.0f);
-	bool                           uiCapturesMouse    = false;
-	bool                           uiCapturesKeyboard = false;
-};
-
 // Reflects a component so the inspector can name, add and remove it without
 // knowing the type. Registry members can't be attached directly: try_get and
 // remove are overloaded or variadic, so &registry::foo<T> is ambiguous.

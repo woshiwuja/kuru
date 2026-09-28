@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 #include <random>
+#include "../material/material.hpp"
 
 using namespace KR;
 
@@ -19,7 +20,6 @@ void RenderPlugin::init(entt::registry &reg) {
   createSkyDescriptorSetLayout();
   createSkyPipeline();
   createSkyResources();
-  registerComponent<MeshRef>();
   registerComponent<Renderable>();
 }
 
@@ -506,7 +506,9 @@ void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
   if (!reg.all_of<Transform>(entity)) {
     reg.emplace<Transform>(entity);
   }
-  reg.emplace<MaterialRef>(entity, std::move(texture), params);
+  reg.emplace<MaterialRef>(
+      entity, std::make_shared<Material>(Material{.baseColor = std::move(texture)}),
+      params);
   reg.emplace<Renderable>(entity, std::move(renderable));
 }
 
@@ -531,13 +533,23 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
                  .color = glm::vec4(light.color, 0.0f)};
   }
 
+  // Column 3 of the inverse view is the camera's world position. Once per
+  // frame: the specular term needs it and the shader cannot invert `view`.
+  const glm::vec4 cameraPos = glm::inverse(frame.view)[3];
+
   for (auto [entity, transform, material, renderable] :
        reg.view<Transform, MaterialRef, Renderable>().each()) {
-    UniformBufferObject ubo{.model = transform.matrix(),
-                            .view = frame.view,
-                            .proj = frame.proj,
-                            .material = material.params,
-                            .lightCount = lightCount};
+    const Material &m = *material.material;
+    UniformBufferObject ubo{
+        .model = transform.matrix(),
+        .view = frame.view,
+        .proj = frame.proj,
+        .material = {material.params.x, material.params.y, m.alphaCutoff,
+                     m.alphaMask ? 1.0f : 0.0f},
+        .baseColor = m.color,
+        .pbr = {m.metallic, m.roughness, 0.0f, 0.0f},
+        .cameraPos = cameraPos,
+        .lightCount = lightCount};
     std::copy(lights, lights + lightCount, ubo.lights);
     memcpy(renderable.uniformBuffersMapped[frame.frameIndex], &ubo,
            sizeof(ubo));

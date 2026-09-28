@@ -12,16 +12,6 @@ struct MeshRef {
 	std::shared_ptr<Mesh> mesh;
 };
 
-struct MaterialRef {
-	std::shared_ptr<Texture> texture;
-	// x: 2 = debug overlay (flat vertex color, y = its alpha), 0 = plain
-	// textured mesh. Matches `material` in shaders/slang.slang.
-	glm::vec4 params = {0.0f, 0.0f, 0.0f, 0.0f};
-};
-
-// Per-entity GPU binding state, one slot per frame in flight. Derived from
-// MeshRef + MaterialRef, owned by this plugin: keeping descriptor sets out of
-// MaterialRef is what lets two entities share a material.
 struct Renderable {
 	std::vector<vk::raii::Buffer>        uniformBuffers;
 	std::vector<vk::raii::DeviceMemory>  uniformBuffersMemory;

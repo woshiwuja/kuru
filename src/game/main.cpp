@@ -12,6 +12,7 @@
 #include "plugins/physics/physics.hpp"
 #include "plugins/render/render.hpp"
 #include "plugins/ui/ui.hpp"
+#include "plugins/material/material.hpp"
 #include "plugins/default.hpp"
 #include "plugins/physics/physics.hpp"
 #include <cstdio>
@@ -42,6 +43,7 @@ int main()
 		app.addPlugin(std::make_unique<StatPlugin>());
 		app.addPlugin(std::make_unique<InventoryPlugin>());
 		app.addPlugin(std::make_unique<NamePlugin>());
+		app.addPlugin(std::make_unique<MaterialPlugin>());
 		app.init();
 		app.run();
 		app.end();
