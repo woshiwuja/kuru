@@ -3,8 +3,13 @@
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
 #include <Jolt/Jolt.h>
-#if defined(__GNUC__) || defined(__clang__)
+// clang targeting MSVC defines __clang__ but has no cxxabi.h (MSVC ABI),
+// so check for the header itself rather than the compiler.
+#if defined(__has_include)
+#if __has_include(<cxxabi.h>)
+#define KR_HAS_CXXABI 1
 #include <cxxabi.h>
+#endif
 #endif
 namespace KR {
 
@@ -34,7 +39,7 @@ void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
 std::string assetPath(const std::string &relative);
 
 std::vector<char> readFile(const std::string &filename);
-#if defined(__GNUC__) || defined(__clang__)
+#ifdef KR_HAS_CXXABI
 inline std::string demangle(const char* mangled) {
     int status = 0;
     std::unique_ptr<char, void(*)(void*)> res(
@@ -52,6 +57,9 @@ inline const char* cdemangle(const char* mangled) {
 #else
 inline std::string demangle(const char* mangled) {
     return mangled; // MSVC: typeid().name() è già human-readable
+}
+inline const char* cdemangle(const char* mangled) {
+    return mangled;
 }
 #endif
 
