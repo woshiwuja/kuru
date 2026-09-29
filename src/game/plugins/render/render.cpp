@@ -6,7 +6,6 @@
 #include <Kuru.h>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
-#include <random>
 #include "../material/material.hpp"
 
 using namespace KR;
@@ -17,9 +16,6 @@ void RenderPlugin::init(entt::registry &reg) {
   createDescriptorSetLayout();
   createGraphicsPipeline();
   createDescriptorPool();
-  createSkyDescriptorSetLayout();
-  createSkyPipeline();
-  createSkyResources();
   registerComponent<Renderable>();
 }
 
@@ -182,231 +178,9 @@ void RenderPlugin::createDescriptorPool() {
       vk::raii::DescriptorPool(Core::get()->device->device, poolInfo);
 }
 
-void RenderPlugin::createSkyDescriptorSetLayout() {
-  auto &device = Core::get()->device;
-  // Matches the explicit [[vk::binding(...)]] indices in sky_clouds.slang:
-  // 0 = ShaderConstants, 1 = iChannel0 (Texture2D), 2 = iChannel0Sampler.
-  std::array bindings = {
-      vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1,
-                                     vk::ShaderStageFlagBits::eFragment,
-                                     nullptr),
-      vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eSampledImage, 1,
-                                     vk::ShaderStageFlagBits::eFragment,
-                                     nullptr),
-      vk::DescriptorSetLayoutBinding(2, vk::DescriptorType::eSampler, 1,
-                                     vk::ShaderStageFlagBits::eFragment,
-                                     nullptr)};
-
-  vk::DescriptorSetLayoutCreateInfo layoutInfo{
-      .bindingCount = static_cast<uint32_t>(bindings.size()),
-      .pBindings = bindings.data()};
-  skyDescriptorSetLayout =
-      vk::raii::DescriptorSetLayout(device->device, layoutInfo);
-}
-
-void RenderPlugin::createSkyPipeline() {
-  auto core = Core::get();
-  vk::raii::ShaderModule shaderModule =
-      createShaderModule(readFile("shaders/sky_clouds.spv"));
-
-  vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-      .stage = vk::ShaderStageFlagBits::eVertex,
-      .module = *shaderModule,
-      .pName = "vertMain"};
-  vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-      .stage = vk::ShaderStageFlagBits::eFragment,
-      .module = *shaderModule,
-      .pName = "fragmentMain"};
-  vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
-                                                      fragShaderStageInfo};
-
-  // No vertex buffer bound for this draw: vertMain synthesizes a fullscreen
-  // triangle from SV_VertexID alone.
-  vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
-  vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-      .topology = vk::PrimitiveTopology::eTriangleList,
-      .primitiveRestartEnable = vk::False};
-  vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1,
-                                                    .scissorCount = 1};
-  vk::PipelineRasterizationStateCreateInfo rasterizer{
-      .depthClampEnable = vk::False,
-      .rasterizerDiscardEnable = vk::False,
-      .polygonMode = vk::PolygonMode::eFill,
-      // The synthesized triangle's winding isn't worth pinning down; just draw
-      // both ways.
-      .cullMode = vk::CullModeFlagBits::eNone,
-      .frontFace = vk::FrontFace::eCounterClockwise,
-      .depthBiasEnable = vk::False,
-      .lineWidth = 1.0f};
-  vk::PipelineMultisampleStateCreateInfo multisampling{
-      .rasterizationSamples = core->graphics->msaaSamples,
-      .sampleShadingEnable = vk::False};
-  // Off both ways: the sky must never occlude or be occluded by real geometry,
-  // it only ever fills in pixels nothing else drew.
-  vk::PipelineDepthStencilStateCreateInfo depthStencil{
-      .depthTestEnable = vk::False,
-      .depthWriteEnable = vk::False,
-      .depthCompareOp = vk::CompareOp::eLess,
-      .depthBoundsTestEnable = vk::False,
-      .stencilTestEnable = vk::False};
-  vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-      .blendEnable = vk::False,
-      .colorWriteMask =
-          vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
-  vk::PipelineColorBlendStateCreateInfo colorBlending{
-      .logicOpEnable = vk::False,
-      .logicOp = vk::LogicOp::eCopy,
-      .attachmentCount = 1,
-      .pAttachments = &colorBlendAttachment};
-  std::vector dynamicStates = {vk::DynamicState::eViewport,
-                               vk::DynamicState::eScissor};
-  vk::PipelineDynamicStateCreateInfo dynamicState{
-      .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-      .pDynamicStates = dynamicStates.data()};
-
-  vk::PipelineLayoutCreateInfo pipelineLayoutInfo{.setLayoutCount = 1,
-                                                  .pSetLayouts =
-                                                      &*skyDescriptorSetLayout,
-                                                  .pushConstantRangeCount = 0};
-  skyPipelineLayout =
-      vk::raii::PipelineLayout(core->device->device, pipelineLayoutInfo);
-
-  vk::Format depthFormat = core->graphics->findDepthFormat();
-
-  // Dynamic rendering requires attachment formats to match the pass this
-  // pipeline is used in, even though this one never touches the depth image.
-  vk::StructureChain<vk::GraphicsPipelineCreateInfo,
-                     vk::PipelineRenderingCreateInfo>
-      pipelineCreateInfoChain = {
-          {.stageCount = 2,
-           .pStages = shaderStages,
-           .pVertexInputState = &vertexInputInfo,
-           .pInputAssemblyState = &inputAssembly,
-           .pViewportState = &viewportState,
-           .pRasterizationState = &rasterizer,
-           .pMultisampleState = &multisampling,
-           .pDepthStencilState = &depthStencil,
-           .pColorBlendState = &colorBlending,
-           .pDynamicState = &dynamicState,
-           .layout = *skyPipelineLayout,
-           .renderPass = nullptr},
-          {.colorAttachmentCount = 1,
-           .pColorAttachmentFormats =
-               &core->graphics->swapChainSurfaceFormat.format,
-           .depthAttachmentFormat = depthFormat}};
-
-  skyPipeline = vk::raii::Pipeline(
-      core->device->device, nullptr,
-      pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-}
-
-namespace {
-// sky_clouds.slang wants a Shadertoy-style RGBA noise texture (iChannel0) and
-// there's no asset for one, so this stands in for it. Fixed seed: reproducible
-// runs, not cryptographic.
-std::vector<unsigned char> generateNoisePixels(uint32_t size) {
-  std::vector<unsigned char> pixels(static_cast<size_t>(size) * size * 4);
-  std::mt19937 rng(1337);
-  std::uniform_int_distribution<int> byteDist(0, 255);
-  for (auto &channel : pixels) {
-    channel = static_cast<unsigned char>(byteDist(rng));
-  }
-  return pixels;
-}
-} // namespace
-
-void RenderPlugin::createSkyResources() {
-  auto core = Core::get();
-
-  constexpr uint32_t noiseSize =
-      256; // matches the /256.0 tiling in sky_clouds.slang
-  std::vector<unsigned char> noise = generateNoisePixels(noiseSize);
-  // Unorm, not Srgb: these are data values, not color, and must not be
-  // gamma-decoded on sample.
-  skyNoiseTexture = loadTextureFromPixels(noise.data(), noiseSize, noiseSize,
-                                          vk::Format::eR8G8B8A8Unorm);
-
-  for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    vk::DeviceSize bufferSize = sizeof(SkyUniformBufferObject);
-    vk::raii::Buffer buffer = nullptr;
-    vk::raii::DeviceMemory bufferMemory = nullptr;
-    createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
-                 vk::MemoryPropertyFlagBits::eHostVisible |
-                     vk::MemoryPropertyFlagBits::eHostCoherent,
-                 buffer, bufferMemory);
-    skyUniformBuffers.emplace_back(std::move(buffer));
-    skyUniformBuffersMemory.emplace_back(std::move(bufferMemory));
-    skyUniformBuffersMapped.emplace_back(
-        skyUniformBuffersMemory[i].mapMemory(0, bufferSize));
-  }
-
-  // Sized for one set per frame in flight: the sky is a single global draw,
-  // not one-per-entity like the mesh descriptor pool.
-  std::array poolSize{vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer,
-                                             MAX_FRAMES_IN_FLIGHT),
-                      vk::DescriptorPoolSize(vk::DescriptorType::eSampledImage,
-                                             MAX_FRAMES_IN_FLIGHT),
-                      vk::DescriptorPoolSize(vk::DescriptorType::eSampler,
-                                             MAX_FRAMES_IN_FLIGHT)};
-  vk::DescriptorPoolCreateInfo poolInfo{
-      .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-      .maxSets = MAX_FRAMES_IN_FLIGHT,
-      .poolSizeCount = static_cast<uint32_t>(poolSize.size()),
-      .pPoolSizes = poolSize.data()};
-  skyDescriptorPool = vk::raii::DescriptorPool(core->device->device, poolInfo);
-
-  std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT,
-                                               *skyDescriptorSetLayout);
-  vk::DescriptorSetAllocateInfo allocInfo{
-      .descriptorPool = *skyDescriptorPool,
-      .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-      .pSetLayouts = layouts.data()};
-  skyDescriptorSets = core->device->device.allocateDescriptorSets(allocInfo);
-
-  for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    vk::DescriptorBufferInfo bufferInfo{.buffer = *skyUniformBuffers[i],
-                                        .offset = 0,
-                                        .range =
-                                            sizeof(SkyUniformBufferObject)};
-    vk::DescriptorImageInfo imageInfo{
-        .sampler = nullptr,
-        .imageView = *skyNoiseTexture->view,
-        .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-    vk::DescriptorImageInfo samplerInfo{.sampler = *core->graphics->sampler,
-                                        .imageView = nullptr,
-                                        .imageLayout =
-                                            vk::ImageLayout::eUndefined};
-    std::array descriptorWrites{
-        vk::WriteDescriptorSet{.dstSet = *skyDescriptorSets[i],
-                               .dstBinding = 0,
-                               .dstArrayElement = 0,
-                               .descriptorCount = 1,
-                               .descriptorType =
-                                   vk::DescriptorType::eUniformBuffer,
-                               .pBufferInfo = &bufferInfo},
-        vk::WriteDescriptorSet{.dstSet = *skyDescriptorSets[i],
-                               .dstBinding = 1,
-                               .dstArrayElement = 0,
-                               .descriptorCount = 1,
-                               .descriptorType =
-                                   vk::DescriptorType::eSampledImage,
-                               .pImageInfo = &imageInfo},
-        vk::WriteDescriptorSet{.dstSet = *skyDescriptorSets[i],
-                               .dstBinding = 2,
-                               .dstArrayElement = 0,
-                               .descriptorCount = 1,
-                               .descriptorType = vk::DescriptorType::eSampler,
-                               .pImageInfo = &samplerInfo}};
-    core->device->device.updateDescriptorSets(descriptorWrites, {});
-  }
-}
-
 void RenderPlugin::update(entt::registry &reg) {
   auto *core = Core::get();
   updateUniforms(reg);
-  updateSkyUniforms(reg);
-  drawSky(reg); // first: meshes should draw over it, not the other way round
   drawMeshes(reg);
   ImGui::ShowDemoWindow();
   if (ImGui::Begin("Scene")) {
@@ -520,17 +294,29 @@ void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
 void RenderPlugin::updateUniforms(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
 
-  // Gathered once per frame, not per entity: every renderable shares the same
-  // set of lights, so there's no point re-walking the light view for each one.
-  GPULight lights[MAX_LIGHTS];
-  uint32_t lightCount = 0;
+  // The components are already in UBO layout, so gathering is a plain copy.
+  DirectionalLight dirLights[MAX_LIGHTS];
+  PointLight       pointLights[MAX_LIGHTS];
+  SpotLight        spotLights[MAX_LIGHTS];
+  glm::uvec4 counts{0};
+
   for (auto [light_e, light] : reg.view<DirectionalLight>().each()) {
-    if (lightCount >= MAX_LIGHTS) {
+    if (counts.x >= MAX_LIGHTS) {
       break;
     }
-    lights[lightCount++] =
-        GPULight{.direction = glm::vec4(light.direction, 0.0f),
-                 .color = glm::vec4(light.color, 0.0f)};
+    dirLights[counts.x++] = light;
+  }
+  for (auto [light_e, light] : reg.view<PointLight>().each()) {
+    if (counts.y >= MAX_LIGHTS) {
+      break;
+    }
+    pointLights[counts.y++] = light;
+  }
+  for (auto [light_e, light] : reg.view<SpotLight>().each()) {
+    if (counts.z >= MAX_LIGHTS) {
+      break;
+    }
+    spotLights[counts.z++] = light;
   }
 
   // Column 3 of the inverse view is the camera's world position. Once per
@@ -549,8 +335,10 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
         .baseColor = m.color,
         .pbr = {m.metallic, m.roughness, 0.0f, 0.0f},
         .cameraPos = cameraPos,
-        .lightCount = lightCount};
-    std::copy(lights, lights + lightCount, ubo.lights);
+        .counts = counts};
+    std::copy(dirLights, dirLights + counts.x, ubo.dirLights);
+    std::copy(pointLights, pointLights + counts.y, ubo.pointLights);
+    std::copy(spotLights, spotLights + counts.z, ubo.spotLights);
     memcpy(renderable.uniformBuffersMapped[frame.frameIndex], &ubo,
            sizeof(ubo));
   }
@@ -604,57 +392,6 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
                    *meshRef.mesh, renderable);
   }
-}
-
-void RenderPlugin::updateSkyUniforms(entt::registry &reg) {
-  auto skyView = reg.view<Sky>();
-  if (skyView.begin() == skyView.end()) {
-    return;
-  }
-  const auto &frame = reg.ctx().get<FrameContext>();
-  skyTime += Core::get()->deltaTime * .1f;
-  // Rotation only: dropping the view matrix's translation is what keeps the
-  // sky from shifting as the camera moves, while still rotating with it.
-  glm::mat4 viewRotOnly = glm::mat4(glm::mat3(frame.view));
-
-  // The procedural sky models a single sun, so it only ever tints with the
-  // first light, unlike updateUniforms which now lights meshes with all of
-  // them.
-  glm::vec4 sunColor = {1.0f, 1.0f, 1.0f, 0.0f};
-  auto lightView = reg.view<DirectionalLight>();
-  if (lightView.begin() != lightView.end()) {
-    sunColor = glm::vec4(
-        lightView.get<DirectionalLight>(*lightView.begin()).color, 0.0f);
-  }
-
-  SkyUniformBufferObject ubo{
-      .resolution = {static_cast<float>(frame.extent.width),
-                     static_cast<float>(frame.extent.height)},
-      .time = skyTime,
-      .invViewRotProj = glm::inverse(frame.skyRayProj * viewRotOnly),
-      .sunColor = sunColor};
-  memcpy(skyUniformBuffersMapped[frame.frameIndex], &ubo, sizeof(ubo));
-}
-
-void RenderPlugin::drawSky(entt::registry &reg) {
-  auto skyView = reg.view<Sky>();
-  if (skyView.begin() == skyView.end()) {
-    return;
-  }
-
-  const auto &frame = reg.ctx().get<FrameContext>();
-  const auto &commandBuffer = *frame.commandBuffer;
-
-  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *skyPipeline);
-  commandBuffer.setViewport(
-      0, vk::Viewport(0.0f, 0.0f, static_cast<float>(frame.extent.width),
-                      static_cast<float>(frame.extent.height), 0.0f, 1.0f));
-  commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), frame.extent));
-  commandBuffer.bindDescriptorSets(
-      vk::PipelineBindPoint::eGraphics, *skyPipelineLayout, 0,
-      *skyDescriptorSets[frame.frameIndex], nullptr);
-  commandBuffer.draw(
-      3, 1, 0, 0); // no vertex/index buffer: vertMain synthesizes the triangle
 }
 
 namespace {

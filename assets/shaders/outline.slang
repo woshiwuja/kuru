@@ -15,13 +15,23 @@
 
 // ---- normal + distance prepass ---------------------------------------------
 
-// Same layout as slang.slang's UBO (and vertex.hpp's UniformBufferObject): the
+// Same layout as slang.slang's UBO (and render.hpp's UniformBufferObject): the
 // prepass reuses RenderPlugin's mesh pipeline layout and its per-entity
 // descriptor sets, so it must see binding 0 the same way. The texture at
-// binding 1 is simply not read here.
+// binding 1 is simply not read here. Only model/view/proj/material are read,
+// but the light arrays still have to be declared or the trailing fields drift.
 static const uint MAX_LIGHTS = 4;
 
-struct GPULight {
+struct DirectionalLight {
+    float4 direction;
+    float4 color;
+};
+struct PointLight {
+    float4 position;
+    float4 color;
+};
+struct SpotLight {
+    float4 position;
     float4 direction;
     float4 color;
 };
@@ -34,8 +44,10 @@ struct UniformBufferObject {
     float4 baseColor;
     float4 pbr;
     float4 cameraPos;
-    GPULight lights[MAX_LIGHTS];
-    uint lightCount;
+    DirectionalLight dirLights[MAX_LIGHTS];
+    PointLight       pointLights[MAX_LIGHTS];
+    SpotLight        spotLights[MAX_LIGHTS];
+    uint4 counts;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;

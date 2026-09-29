@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
+#include "../lighting/lighting.hpp"
 #include "../transform/transform.hpp"
 
 using namespace KR;
@@ -12,18 +13,33 @@ struct MeshRef {
 	std::shared_ptr<Mesh> mesh;
 };
 
+struct UniformBufferObject
+{
+	alignas(16) glm::mat4 model;
+	alignas(16) glm::mat4 view;
+	alignas(16) glm::mat4 proj;
+	alignas(16) glm::vec4 material;
+	alignas(16) glm::vec4 baseColor{1.0f};
+	alignas(16) glm::vec4 pbr{1.0f, 1.0f, 0.0f, 0.0f};
+	alignas(16) glm::vec4 cameraPos{0.0f};
+	alignas(16) DirectionalLight dirLights[MAX_LIGHTS];
+	alignas(16) PointLight       pointLights[MAX_LIGHTS];
+	alignas(16) SpotLight        spotLights[MAX_LIGHTS];
+	// x: directional, y: point, z: spot. w unused. One uvec4 rather than three
+	// trailing uints, so there is no scalar-offset question at the end.
+	alignas(16) glm::uvec4 counts{0};
+};
+// The C++ <-> slang correspondence is maintained by hand, so pin the one
+// number that catches a drift in either file.
+static_assert(sizeof(UniformBufferObject) ==
+                  3 * 64 + 4 * 16 + MAX_LIGHTS * (32 + 32 + 48) + 16,
+              "UniformBufferObject no longer matches its std140 layout");
+
 struct Renderable {
 	std::vector<vk::raii::Buffer>        uniformBuffers;
 	std::vector<vk::raii::DeviceMemory>  uniformBuffersMemory;
 	std::vector<void *>                  uniformBuffersMapped;
-	// Outer index: submesh (one per glTF primitive, at least one entry even for
-	// a single-material mesh). Inner index: frame in flight. All submeshes of
-	// one entity share the same uniform buffers above - only the bound texture
-	// (and thus the descriptor set) differs between them.
 	std::vector<std::vector<vk::raii::DescriptorSet>> descriptorSets;
-
-	// std::vector<move-only> still reports as copy-constructible, so entt picks
-	// its copy path and only fails deep inside the instantiation. Say it here.
 	Renderable()                              = default;
 	Renderable(const Renderable &)            = delete;
 	Renderable &operator=(const Renderable &) = delete;
@@ -33,50 +49,12 @@ struct Renderable {
 
 struct DebugMesh {};
 
-
-struct Sky {};
-
-// ---- plugin -----------------------------------------------------------------
-
-// Matches ShaderConstants in shaders/sky_clouds.slang. cbuffer packing keeps
-// this whole thing in one 16-byte register regardless of the trailing pad.
-struct SkyUniformBufferObject {
-	glm::vec2 resolution;
-	float     time;
-	float     _pad = 0.0f;
-	// inverse(proj * rotation-only view): reconstructs a per-pixel world-space
-	// ray direction that tracks camera orientation but not position, so the sky
-	// rotates correctly with the camera while staying put as the camera moves.
-	glm::mat4 invViewRotProj;
-	// First DirectionalLight's color, so the sky tints with the sun instead of
-	// the old fixed dither noise. w unused.
-	glm::vec4 sunColor;
-};
-
 struct RenderPlugin : Plugin {
-	// The pipeline, its layout and the descriptor pool describe how this plugin
-	// draws: they belong to it, not to Core.
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
 	vk::raii::Pipeline            debugPipeline       = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
-
-	// Sky: a separate pipeline (no vertex input, depth write off) and its own
-	// small descriptor pool, since its binding layout (UBO + split
-	// texture/sampler, no vertex buffer) doesn't match the mesh pipeline's.
-	vk::raii::DescriptorSetLayout skyDescriptorSetLayout = nullptr;
-	vk::raii::PipelineLayout      skyPipelineLayout       = nullptr;
-	vk::raii::Pipeline            skyPipeline              = nullptr;
-	vk::raii::DescriptorPool      skyDescriptorPool        = nullptr;
-	// Procedurally generated: the port needs a Shadertoy-style RGBA noise
-	// texture and we have no asset for one, so RenderPlugin builds it once.
-	std::shared_ptr<Texture> skyNoiseTexture;
-	std::vector<vk::raii::Buffer>        skyUniformBuffers;
-	std::vector<vk::raii::DeviceMemory>  skyUniformBuffersMemory;
-	std::vector<void *>                  skyUniformBuffersMapped;
-	std::vector<vk::raii::DescriptorSet> skyDescriptorSets;
-	float skyTime = 0.0f; // iTime: seconds since startup, accumulated from deltaTime
 
 	void init(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
@@ -87,30 +65,17 @@ struct RenderPlugin : Plugin {
 	[[nodiscard]] vk::raii::ShaderModule
 	createShaderModule(const std::vector<char> &code) const;
 
-	void createSkyDescriptorSetLayout();
-	void createSkyPipeline();
-	void createSkyResources(); // noise texture, per-frame UBOs, descriptor sets
-
 	void attach(entt::registry &reg, entt::entity entity,
 	            std::shared_ptr<Texture> texture, glm::vec4 params);
-	// Attaches mesh + texture to an entity the caller already created, rather
-	// than creating one of its own - that's what let DefaultPlugin's mesh end
-	// up on a different entity than its Character/Name/Transform. Transform is
-	// only emplaced if `entity` doesn't already carry one.
 	void spawn(entt::registry &reg, entt::entity entity,
 	           std::shared_ptr<Mesh> mesh, std::shared_ptr<Texture> texture,
 	           glm::vec4 params, Transform transform = {});
 	void despawn(entt::registry &reg, entt::entity entity);
 
-	// systems
 	void updateUniforms(entt::registry &reg);
 	void drawMeshes(entt::registry &reg);
-	void updateSkyUniforms(entt::registry &reg);
-	void drawSky(entt::registry &reg);
 };
 
-// One entity's submeshes, bound and drawn through `layout`. Shared by the main
-// pass and OutlinePlugin's normal prepass, which reuse the same descriptor sets.
 void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
                     const vk::raii::PipelineLayout &layout, uint32_t frameIndex,
                     const Mesh &mesh, const Renderable &renderable);
@@ -122,17 +87,9 @@ inline RenderPlugin &renderer(entt::registry &reg) {
   return **plugin;
 }
 
-// Textures are shared between entities, so they go through a cache keyed by
-// path, same as meshes (getMesh, in mesh_registry.hpp). Created on first use.
 std::shared_ptr<Texture> getTexture(entt::registry &reg,
                                     const std::string &path);
 
-// Loads mesh and texture through their caches and attaches them to `entity`,
-// which the caller creates - so a mesh can be added to an entity that already
-// carries other components (e.g. a Character), instead of always landing on
-// a fresh entity of its own. texturePath can be empty when the mesh carries
-// its own embedded texture. transform is only applied if `entity` doesn't
-// already carry one.
 void spawn(entt::registry &reg, entt::entity entity,
            const std::string &meshPath, const std::string &texturePath,
            glm::vec4 params = {}, Transform transform = {});

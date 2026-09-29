@@ -25,7 +25,6 @@ struct MapPlugin : public Plugin {
 		spawn(reg, mapEntity, mapPath, "textures/viking_room.ktx2", {},
 		      Transform{.scale = glm::vec3(mapScale)});
 		reg.emplace<Map>(mapEntity, mapPath);
-		reg.emplace<Sky>(reg.create());
 
 		entt::resource<Mesh> mesh = getMesh(reg, mapPath);
 

@@ -11,3 +11,4 @@ textures/*.pdf
 imgui.ini
 
 *.glb
+.vscode/c_cpp_properties.json

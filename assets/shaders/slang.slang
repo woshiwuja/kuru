@@ -2,15 +2,23 @@
 // Bindings and vertex locations must match Core::createDescriptorSetLayout and
 // Vertex::getAttributeDescriptions in src/main.cpp.
 
-// Must match MAX_LIGHTS in src/lib/common/vertex.hpp.
+// Must match MAX_LIGHTS in src/game/plugins/lighting/lighting.hpp.
 static const uint MAX_LIGHTS = 4;
 
+// float4 throughout, mirroring lighting.hpp: a float3 here would take a
+// 16-byte slot but only 12 bytes of size, which is exactly what the C++ side
+// cannot reproduce with packed glm::vec3s. The w lanes carry the scalars.
 struct DirectionalLight {
-    float4 direction;
+    float4 direction;   // xyz: direction, w unused
     float4 color;
 };
-struct PointLight{
-    float radius;
+struct PointLight {
+    float4 position;    // xyz: world position, w: radius
+    float4 color;
+};
+struct SpotLight {
+    float4 position;    // xyz: world position, w: near_radius
+    float4 direction;   // xyz: beam direction, w: far_radius
     float4 color;
 };
 
@@ -23,8 +31,11 @@ struct UniformBufferObject {
     float4 baseColor;
     float4 pbr;
     float4 cameraPos;
-    DirectionalLight lights[MAX_LIGHTS];
-    uint lightCount;
+    DirectionalLight dirLights[MAX_LIGHTS];
+    PointLight       pointLights[MAX_LIGHTS];
+    SpotLight        spotLights[MAX_LIGHTS];
+    // x: directional, y: point, z: spot. w unused.
+    uint4 counts;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
@@ -103,6 +114,14 @@ float3 brdf(float3 n, float3 v, float3 l, float3 albedo, float metallic, float r
     return (kd * albedo / PI + spec) * ndotl;
 }
 
+// Inverse-square, windowed so the light reaches exactly zero at `radius`
+// instead of dragging a faint tail across the whole scene. The +1 keeps the
+// denominator off zero at the light's own position.
+float windowedFalloff(float dist, float radius) {
+    float f = saturate(1.0 - pow(dist / max(radius, 1e-3), 4.0));
+    return f * f / (dist * dist + 1.0);
+}
+
 [shader("fragment")]
 float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : SV_Target {
     // Debug overlay (material.x == 2): flat vertex color, alpha from material.y.
@@ -129,9 +148,40 @@ float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : S
     float3 f0 = lerp(float3(0.04), albedo, metallic);
     float3 sky = SKY_COLOR * (0.5 + 0.5 * n.y);
     float3 lit = sky * (albedo * (1.0 - metallic) + f0 * (1.0 - roughness));
-    for (uint i = 0; i < ubo.lightCount; i++) {
-        float3 l = normalize(ubo.lights[i].direction.xyz);
-        lit += ubo.lights[i].color.xyz * brdf(n, v, l, albedo, metallic, roughness);
+    // viewDir is cameraPos - worldPos unnormalized, so the fragment's world
+    // position comes back for free - no extra varying needed for the
+    // positional lights below.
+    float3 worldPos = ubo.cameraPos.xyz - viewDir;
+
+    for (uint i = 0; i < ubo.counts.x; i++) {
+        float3 l = normalize(ubo.dirLights[i].direction.xyz);
+        lit += ubo.dirLights[i].color.rgb * brdf(n, v, l, albedo, metallic, roughness);
+    }
+    for (uint i = 0; i < ubo.counts.y; i++) {
+        float3 d = ubo.pointLights[i].position.xyz - worldPos;
+        float dist = length(d);
+        float atten = windowedFalloff(dist, ubo.pointLights[i].position.w);
+        if (atten <= 0.0) { continue; }
+        lit += ubo.pointLights[i].color.rgb * atten *
+               brdf(n, v, d / max(dist, 1e-4), albedo, metallic, roughness);
+    }
+    for (uint i = 0; i < ubo.counts.z; i++) {
+        float3 d = ubo.spotLights[i].position.xyz - worldPos;
+        float dist = length(d);
+        float3 l = d / max(dist, 1e-4);
+        // near_radius / far_radius are the cone's radii at unit distance, i.e.
+        // tan(half angle), so cos(half angle) = 1 / sqrt(1 + r*r). Inside the
+        // near cone is full bright, past the far cone is dark.
+        float cd = dot(-l, normalize(ubo.spotLights[i].direction.xyz));
+        float cosInner = rsqrt(1.0 + ubo.spotLights[i].position.w * ubo.spotLights[i].position.w);
+        float cosOuter = rsqrt(1.0 + ubo.spotLights[i].direction.w * ubo.spotLights[i].direction.w);
+        float cone = smoothstep(cosOuter, cosInner, cd);
+        if (cone <= 0.0) { continue; }
+        // ponytail: SpotLight has no range field, so distance is pure
+        // inverse-square. Add one and reuse windowedFalloff if spots need to
+        // stop at a set distance like point lights do.
+        lit += ubo.spotLights[i].color.rgb * cone / (dist * dist + 1.0) *
+               brdf(n, v, l, albedo, metallic, roughness);
     }
     return float4(tonemapACES(lit), 1.0);
 }

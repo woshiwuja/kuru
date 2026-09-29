@@ -7,7 +7,7 @@
 //    custom mod() is defined below to preserve the original behavior
 //  - mix() -> lerp()
 
-// Explicit bindings: RenderPlugin::createSkyDescriptorSetLayout builds the
+// Explicit bindings: SkyPlugin::createSkyDescriptorSetLayout builds the
 // layout to match these indices directly, rather than reading them back out.
 [[vk::binding(1, 0)]] Texture2D iChannel0;
 [[vk::binding(2, 0)]] SamplerState iChannel0Sampler;
@@ -20,8 +20,11 @@
     // inverse(proj * rotation-only view): unprojects a screen pixel into a
     // world-space ray direction that follows camera rotation but not position.
     float4x4 invViewRotProj;
-    // First DirectionalLight's color, from LightingPlugin. w unused.
+    // Sky::sunColor. w unused.
     float4   sunColor;
+    // Sky::color: multiplies the sky dome and horizon, not the sun disc or
+    // the clouds' own highlights. w unused.
+    float4   skyTint;
 };
 
 // No vertex buffer bound for this draw: three vertices, indexed only by
@@ -103,8 +106,9 @@ float3 shadeBg(float3 nml, float2 fragCoord)
     float sp = max(sunPow, 0.0);
     float scattering = clamp(1.0 - abs(2.0 * (-bgLight.y)), 0.0, 1.0);
 
-    float3 bgCol = max(0.0, skyPow) * 2.0 * float3(0.8, 0.8, 0.8);
-    bgCol += 0.5 * float3(0.8, 0.8, 0.8) * horizonPow;
+    float3 skyBase = float3(0.8, 0.8, 0.8) * skyTint.rgb;
+    float3 bgCol = max(0.0, skyPow) * 2.0 * skyBase;
+    bgCol += 0.5 * skyBase * horizonPow;
     bgCol += sun * (sunD + pow(sp, max(128.0, abs(bgLight.y) * 512.0)));
     bgCol += float3(0.4, 0.2, 0.15) * (pow(sp, 8.0) + pow(sp, max(8.0, abs(bgLight.y) * 128.0)));
     bgCol *= lerp(float3(0.7, 0.85, 0.95), float3(1.0, 0.45, 0.1), scattering);

@@ -11,6 +11,7 @@
 #include "plugins/outline/outline.hpp"
 #include "plugins/physics/physics.hpp"
 #include "plugins/render/render.hpp"
+#include "plugins/sky/sky.hpp"
 #include "plugins/ui/ui.hpp"
 #include "plugins/material/material.hpp"
 #include "plugins/default.hpp"
@@ -30,6 +31,7 @@ int main()
 		app.addPlugin(std::make_unique<MeshRegistryPlugin>());
 		app.addPlugin(std::make_unique<CameraPlugin>());
 		app.addPlugin(std::make_unique<LightingPlugin>());
+		app.addPlugin(std::make_unique<SkyPlugin>()); // before RenderPlugin: meshes draw over the sky
 		app.addPlugin(std::make_unique<RenderPlugin>());
 		app.addPlugin(std::make_unique<OutlinePlugin>()); // after RenderPlugin: borrows its layout, draws over its meshes
 		app.addPlugin(std::make_unique<TransformPlugin>());
