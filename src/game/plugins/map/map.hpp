@@ -2,6 +2,7 @@
 #include <Kuru.h>
 #include "../render/render.hpp"
 #include "../render/mesh_registry.hpp"
+#include "Jolt/Physics/Body/BodyID.h"
 #include "entt/entity/fwd.hpp"
 #include "Recast.h"
 #include <Jolt/Jolt.h>
@@ -11,6 +12,7 @@
 #include <limits>
 #include <vector>
 #include "../transform/transform.hpp"
+#include "imgui.h"
 
 using namespace KR;
 

@@ -48,6 +48,7 @@ void LightingPlugin::UI(entt::registry &reg) {
     DragFloat("radius", &light.position.w, 0.1f, 0.01f, 1000.0f);
     ColorEdit3("color", &light.color.x,
                ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+    DragFloat("intensity", &light.color.w, 0.5f, 0.0f, 10000.0f);
     if(Button("X")){
       reg.destroy(e);
     }
@@ -65,6 +66,7 @@ void LightingPlugin::UI(entt::registry &reg) {
     DragFloat("far_radius", &light.direction.w, 0.05f, light.position.w, 100.0f);
     ColorEdit3("color", &light.color.x,
                ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
+    DragFloat("intensity", &light.color.w, 0.5f, 0.0f, 10000.0f);
     if(Button("X")){
       reg.destroy(e);
     }

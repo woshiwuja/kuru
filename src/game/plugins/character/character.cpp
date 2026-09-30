@@ -1,5 +1,11 @@
 
 #include "character.hpp"
+#include "Jolt/Physics/Body/BodyID.h"
+#include "entt/entity/fwd.hpp"
+#include "../render/render.hpp"
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Body/BodyInterface.h>
+#include <vector>
 void CharacterPlugin::UI(entt::registry &r){
   using namespace ImGui;
   Begin("Characters");
@@ -8,7 +14,23 @@ void CharacterPlugin::UI(entt::registry &r){
   End();
 }
 
+void clean(entt::registry &r){
+    std::vector<entt::entity> fallen;
+    for(auto [e,t,b] : r.view<Character, Transform, JPH::BodyID>().each()){
+        if (t.position.y <= -1000){
+            fallen.push_back(e);
+        }
+    }
+    auto &bodies = Core::get()->physicsManager.get()->bodies();
+    for (auto e : fallen) {
+        const JPH::BodyID b = r.get<JPH::BodyID>(e);
+        bodies.RemoveBody(b);
+        bodies.DestroyBody(b);
+        renderer(r).despawn(r, e);
+    }
+}
 void CharacterPlugin::update(entt::registry &r) {
+    clean(r);
     UI(r);
 }
 

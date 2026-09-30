@@ -17,3 +17,5 @@ struct CharacterPlugin : public Plugin {
   void UI(entt::registry &r);
   static entt::entity newCharacter(entt::registry &r);
 };
+
+void clean(entt::registry &r);

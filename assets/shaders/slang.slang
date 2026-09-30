@@ -14,12 +14,12 @@ struct DirectionalLight {
 };
 struct PointLight {
     float4 position;    // xyz: world position, w: radius
-    float4 color;
+    float4 color;       // rgb: color, w: intensity
 };
 struct SpotLight {
     float4 position;    // xyz: world position, w: near_radius
     float4 direction;   // xyz: beam direction, w: far_radius
-    float4 color;
+    float4 color;       // rgb: color, w: intensity
 };
 
 struct UniformBufferObject {
@@ -181,7 +181,7 @@ float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : S
         float dist = length(d);
         float atten = windowedFalloff(dist, ubo.pointLights[i].position.w);
         if (atten <= 0.0) { continue; }
-        lit += ubo.pointLights[i].color.rgb * atten *
+        lit += ubo.pointLights[i].color.rgb * ubo.pointLights[i].color.w * atten *
                brdf(n, v, d / max(dist, 1e-4), albedo, metallic, roughness);
     }
     for (uint i = 0; i < ubo.counts.z; i++) {
@@ -199,7 +199,8 @@ float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : S
         // ponytail: SpotLight has no range field, so distance is pure
         // inverse-square. Add one and reuse windowedFalloff if spots need to
         // stop at a set distance like point lights do.
-        lit += ubo.spotLights[i].color.rgb * cone / (dist * dist + 1.0) *
+        lit += ubo.spotLights[i].color.rgb * ubo.spotLights[i].color.w *
+               cone / (dist * dist + 1.0) *
                brdf(n, v, l, albedo, metallic, roughness);
     }
     return float4(tonemapACES(lit), 1.0);
