@@ -1,6 +1,7 @@
 #include "model.hpp"
 #include "../common/common.hpp"
 #include "../core/core.hpp"
+#include <algorithm>
 #include <cmath>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -105,30 +106,37 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   float minY = std::numeric_limits<float>::max();
   float maxY = std::numeric_limits<float>::lowest();
 
-  // One texture per primitive's own material, if it has one. tinygltf decodes
-  // embedded/external images to tightly-packed RGBA8 by default.
   const auto loadMaterialTexture =
       [&](int materialIndex) -> std::shared_ptr<Texture> {
-    if (materialIndex < 0 ||
-        materialIndex >= static_cast<int>(model.materials.size())) {
-      return nullptr;
+    std::vector<double> factor = {1.0, 1.0, 1.0, 1.0};
+    if (materialIndex >= 0 &&
+        materialIndex < static_cast<int>(model.materials.size())) {
+      const auto &pbr = model.materials[materialIndex].pbrMetallicRoughness;
+      factor = pbr.baseColorFactor;
+      const int texIndex = pbr.baseColorTexture.index;
+      const int imgIndex =
+          texIndex >= 0 && texIndex < static_cast<int>(model.textures.size())
+              ? model.textures[texIndex].source
+              : -1;
+      if (imgIndex >= 0 && imgIndex < static_cast<int>(model.images.size()) &&
+          !model.images[imgIndex].image.empty()) {
+        const tinygltf::Image &image = model.images[imgIndex];
+        return loadTextureFromPixels(image.image.data(),
+                                     static_cast<uint32_t>(image.width),
+                                     static_cast<uint32_t>(image.height));
+      }
     }
-    const auto &material = model.materials[materialIndex];
-    const int texIndex = material.pbrMetallicRoughness.baseColorTexture.index;
-    if (texIndex < 0 || texIndex >= static_cast<int>(model.textures.size())) {
-      return nullptr;
-    }
-    const int imgIndex = model.textures[texIndex].source;
-    if (imgIndex < 0 || imgIndex >= static_cast<int>(model.images.size())) {
-      return nullptr;
-    }
-    const tinygltf::Image &image = model.images[imgIndex];
-    if (image.image.empty()) {
-      return nullptr;
-    }
-    return loadTextureFromPixels(image.image.data(),
-                                 static_cast<uint32_t>(image.width),
-                                 static_cast<uint32_t>(image.height));
+    // The factor is linear, the texture is sampled as sRGB: encode it.
+    const auto toSrgb8 = [](double c) {
+      c = std::clamp(c, 0.0, 1.0);
+      c = c <= 0.0031308 ? 12.92 * c : 1.055 * std::pow(c, 1.0 / 2.4) - 0.055;
+      return static_cast<unsigned char>(std::lround(c * 255.0));
+    };
+    const unsigned char pixel[4] = {toSrgb8(factor[0]), toSrgb8(factor[1]),
+                                    toSrgb8(factor[2]),
+                                    static_cast<unsigned char>(std::lround(
+                                        std::clamp(factor[3], 0.0, 1.0) * 255.0))};
+    return loadTextureFromPixels(pixel, 1, 1);
   };
 
   std::vector<std::pair<int, glm::mat4>> instances;

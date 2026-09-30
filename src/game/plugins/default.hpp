@@ -37,6 +37,14 @@ struct DefaultPlugin : public Plugin {
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     spawn(reg, e, "models/spongebob.glb", "");
 
+    // 14x14 = 196 instanced props. No physics bodies, so they hang at y=100.
+    for (int x = 0; x < 14; x++) {
+      for (int z = 0; z < 14; z++) {
+        spawnProp(reg, reg.create(), "models/default_item.glb", "",
+                  Transform{.position = {x * 3.0, 100, z * 3.0}});
+      }
+    }
+
     entt::entity mapEnt = reg.create();
     auto &mapT = reg.emplace<Transform>(mapEnt, Transform{
         .position = {0, 2000, 0},

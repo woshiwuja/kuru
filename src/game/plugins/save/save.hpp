@@ -1,4 +1,4 @@
-#include "entt/entity/fwd.hpp"
+#pragma once
 #include <Kuru.h>
 using namespace KR;
 

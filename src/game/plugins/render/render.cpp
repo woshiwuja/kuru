@@ -143,6 +143,30 @@ void RenderPlugin::createGraphicsPipeline() {
       core->device->device, nullptr,
       pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 
+  // Props: same state, plus a per-instance model matrix at binding 1, one
+  // vec4 column per location 4-7.
+  std::array propBindings{
+      bindingDescription,
+      vk::VertexInputBindingDescription(1, sizeof(glm::mat4),
+                                        vk::VertexInputRate::eInstance)};
+  std::vector<vk::VertexInputAttributeDescription> propAttributes(
+      attributeDescriptions.begin(), attributeDescriptions.end());
+  for (uint32_t c = 0; c < 4; c++) {
+    propAttributes.emplace_back(4 + c, 1, vk::Format::eR32G32B32A32Sfloat,
+                                c * sizeof(glm::vec4));
+  }
+  const auto baseVertexInput = vertexInputInfo;
+  vertexInputInfo.vertexBindingDescriptionCount = propBindings.size();
+  vertexInputInfo.pVertexBindingDescriptions = propBindings.data();
+  vertexInputInfo.vertexAttributeDescriptionCount = propAttributes.size();
+  vertexInputInfo.pVertexAttributeDescriptions = propAttributes.data();
+  shaderStages[0].pName = "vertMainInstanced";
+  propPipeline = vk::raii::Pipeline(
+      core->device->device, nullptr,
+      pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+  vertexInputInfo = baseVertexInput;
+  shaderStages[0].pName = "vertMain";
+
   rasterizer.cullMode = vk::CullModeFlagBits::eNone; // see both sides of a poly
   depthStencil.depthWriteEnable = vk::False; // translucent: test, don't occlude
   colorBlendAttachment = vk::PipelineColorBlendAttachmentState{
@@ -215,11 +239,42 @@ void RenderPlugin::spawn(entt::registry &reg, entt::entity entity,
   attach(reg, entity, std::move(texture), params);
 }
 
+void RenderPlugin::spawnProp(entt::registry &reg, entt::entity entity,
+                             std::shared_ptr<Mesh> mesh,
+                             std::shared_ptr<Texture> texture,
+                             Transform transform) {
+  assert(mesh && texture);
+  auto [it, fresh] = propBatches.try_emplace(mesh.get());
+  if (fresh) {
+    it->second.mesh = mesh;
+    it->second.material =
+        std::make_shared<Material>(Material{.baseColor = texture});
+    it->second.renderable = makeRenderable(*mesh, texture);
+  }
+  if (!reg.all_of<Transform>(entity)) {
+    reg.emplace<Transform>(entity, transform);
+  }
+  reg.emplace<MeshRef>(entity, std::move(mesh));
+  reg.emplace<Prop>(entity);
+}
+
 // Requires MeshRef to already be on `entity` - RenderPlugin::spawn emplaces
 // it right before calling this.
 void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
                           std::shared_ptr<Texture> texture, glm::vec4 params) {
   assert(texture);
+  Renderable renderable = makeRenderable(*reg.get<MeshRef>(entity).mesh, texture);
+  if (!reg.all_of<Transform>(entity)) {
+    reg.emplace<Transform>(entity);
+  }
+  reg.emplace<MaterialRef>(
+      entity, std::make_shared<Material>(Material{.baseColor = std::move(texture)}),
+      params);
+  reg.emplace<Renderable>(entity, std::move(renderable));
+}
+
+Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
+                                        const std::shared_ptr<Texture> &texture) {
   auto core = Core::get();
 
   Renderable renderable;
@@ -240,7 +295,6 @@ void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
   // One descriptor set per submesh (same uniform buffers throughout, only the
   // bound texture changes), so a multi-material mesh draws each part with its
   // own texture instead of stretching one texture over the whole thing.
-  const Mesh &mesh = *reg.get<MeshRef>(entity).mesh;
   const size_t subCount = std::max<size_t>(1, mesh.submeshes.size());
   renderable.descriptorSets.resize(subCount);
 
@@ -286,14 +340,7 @@ void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
       core->device->device.updateDescriptorSets(descriptorWrites, {});
     }
   }
-
-  if (!reg.all_of<Transform>(entity)) {
-    reg.emplace<Transform>(entity);
-  }
-  reg.emplace<MaterialRef>(
-      entity, std::make_shared<Material>(Material{.baseColor = std::move(texture)}),
-      params);
-  reg.emplace<Renderable>(entity, std::move(renderable));
+  return renderable;
 }
 
 void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
@@ -311,53 +358,77 @@ void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
 void RenderPlugin::updateUniforms(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
 
-  // The components are already in UBO layout, so gathering is a plain copy.
-  DirectionalLight dirLights[MAX_LIGHTS];
-  PointLight       pointLights[MAX_LIGHTS];
-  SpotLight        spotLights[MAX_LIGHTS];
-  glm::uvec4 counts{0};
+  // Column 3 of the inverse view is the camera's world position. Once per
+  // frame: the specular term needs it and the shader cannot invert `view`.
+  UniformBufferObject ubo{.view = frame.view,
+                          .proj = frame.proj,
+                          .cameraPos = glm::inverse(frame.view)[3]};
 
+  // The components are already in UBO layout, so gathering is a plain copy.
+  glm::uvec4 &counts = ubo.counts;
   for (auto [light_e, light] : reg.view<DirectionalLight>().each()) {
     if (counts.x >= MAX_LIGHTS) {
       break;
     }
-    dirLights[counts.x++] = light;
+    ubo.dirLights[counts.x++] = light;
   }
   for (auto [light_e, light] : reg.view<PointLight>().each()) {
     if (counts.y >= MAX_LIGHTS) {
       break;
     }
-    pointLights[counts.y++] = light;
+    ubo.pointLights[counts.y++] = light;
   }
   for (auto [light_e, light] : reg.view<SpotLight>().each()) {
     if (counts.z >= MAX_LIGHTS) {
       break;
     }
-    spotLights[counts.z++] = light;
+    ubo.spotLights[counts.z++] = light;
   }
 
-  // Column 3 of the inverse view is the camera's world position. Once per
-  // frame: the specular term needs it and the shader cannot invert `view`.
-  const glm::vec4 cameraPos = glm::inverse(frame.view)[3];
+  auto upload = [&](const Material &m, glm::vec4 params, const glm::mat4 &model,
+                    const Renderable &renderable) {
+    ubo.model = model;
+    ubo.material = {params.x, params.y, m.alphaCutoff, m.alphaMask ? 1.0f : 0.0f};
+    ubo.baseColor = m.color;
+    ubo.pbr = {m.metallic, m.roughness, 0.0f, 0.0f};
+    memcpy(renderable.uniformBuffersMapped[frame.frameIndex], &ubo,
+           sizeof(ubo));
+  };
 
   for (auto [entity, transform, material, renderable] :
        reg.view<Transform, MaterialRef, Renderable>().each()) {
-    const Material &m = *material.material;
-    UniformBufferObject ubo{
-        .model = transform.matrix(),
-        .view = frame.view,
-        .proj = frame.proj,
-        .material = {material.params.x, material.params.y, m.alphaCutoff,
-                     m.alphaMask ? 1.0f : 0.0f},
-        .baseColor = m.color,
-        .pbr = {m.metallic, m.roughness, 0.0f, 0.0f},
-        .cameraPos = cameraPos,
-        .counts = counts};
-    std::copy(dirLights, dirLights + counts.x, ubo.dirLights);
-    std::copy(pointLights, pointLights + counts.y, ubo.pointLights);
-    std::copy(spotLights, spotLights + counts.z, ubo.spotLights);
-    memcpy(renderable.uniformBuffersMapped[frame.frameIndex], &ubo,
-           sizeof(ubo));
+    upload(*material.material, material.params, transform.matrix(), renderable);
+  }
+
+  // Props: count per mesh, grow this frame's instance buffer if needed, then
+  // write the matrices. Replacing the buffer is safe here: drawFrame has
+  // already waited on this slot's fence, so nothing in flight still uses it.
+  auto props = reg.view<Prop, MeshRef, Transform>();
+  for (auto &[key, batch] : propBatches) {
+    batch.count = 0;
+  }
+  for (auto [entity, meshRef, transform] : props.each()) {
+    propBatches.at(meshRef.mesh.get()).count++;
+  }
+  for (auto &[key, batch] : propBatches) {
+    auto &inst = batch.instances[frame.frameIndex];
+    if (batch.count > inst.capacity) {
+      inst.capacity = std::max({batch.count, inst.capacity * 2, 16u});
+      const vk::DeviceSize size = inst.capacity * sizeof(glm::mat4);
+      inst.buffer = nullptr; // release before reallocating
+      inst.memory = nullptr;
+      createBuffer(size, vk::BufferUsageFlagBits::eVertexBuffer,
+                   vk::MemoryPropertyFlagBits::eHostVisible |
+                       vk::MemoryPropertyFlagBits::eHostCoherent,
+                   inst.buffer, inst.memory);
+      inst.mapped = static_cast<glm::mat4 *>(inst.memory.mapMemory(0, size));
+    }
+    upload(*batch.material, {}, glm::mat4{1.0f}, batch.renderable);
+    batch.count = 0; // reused as the write cursor below
+  }
+  for (auto [entity, meshRef, transform] : props.each()) {
+    auto &batch = propBatches.at(meshRef.mesh.get());
+    batch.instances[frame.frameIndex].mapped[batch.count++] = transform.matrix();
   }
 }
 
@@ -365,7 +436,8 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
 // pass and the outline's normal prepass, which reuse the same descriptor sets.
 void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
                     const vk::raii::PipelineLayout &layout, uint32_t frameIndex,
-                    const Mesh &mesh, const Renderable &renderable) {
+                    const Mesh &mesh, const Renderable &renderable,
+                    uint32_t instanceCount) {
   commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer, {0});
   commandBuffer.bindIndexBuffer(*mesh.indexBuffer, 0, vk::IndexType::eUint32);
 
@@ -373,7 +445,7 @@ void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *layout, 0,
         *renderable.descriptorSets[0][frameIndex], nullptr);
-    commandBuffer.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
+    commandBuffer.drawIndexed(mesh.indexCount, instanceCount, 0, 0, 0);
     return;
   }
 
@@ -382,7 +454,7 @@ void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *layout, 0,
         *renderable.descriptorSets[s][frameIndex], nullptr);
-    commandBuffer.drawIndexed(sub.indexCount, 1, sub.indexOffset, 0, 0);
+    commandBuffer.drawIndexed(sub.indexCount, instanceCount, sub.indexOffset, 0, 0);
   }
 }
 
@@ -401,6 +473,17 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
        reg.view<MeshRef, Renderable>(entt::exclude<DebugMesh>).each()) {
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
                    *meshRef.mesh, renderable);
+  }
+
+  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *propPipeline);
+  for (auto &[key, batch] : propBatches) {
+    if (batch.count == 0) {
+      continue;
+    }
+    commandBuffer.bindVertexBuffers(
+        1, *batch.instances[frame.frameIndex].buffer, {0});
+    drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
+                   *batch.mesh, batch.renderable, batch.count);
   }
 
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *debugPipeline);
@@ -437,4 +520,11 @@ void spawn(entt::registry &reg, entt::entity entity,
   std::shared_ptr<Texture> fallbackTexture = getTexture(reg, texturePath);
   renderer(reg).spawn(reg, entity, getMesh(reg, meshPath).handle(),
                       std::move(fallbackTexture), params, transform);
+}
+
+void spawnProp(entt::registry &reg, entt::entity entity,
+               const std::string &meshPath, const std::string &texturePath,
+               Transform transform) {
+  renderer(reg).spawnProp(reg, entity, getMesh(reg, meshPath).handle(),
+                          getTexture(reg, texturePath), transform);
 }

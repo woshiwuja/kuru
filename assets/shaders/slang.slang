@@ -75,6 +75,25 @@ VSOutput vertMain(float3 position, float3 color, float2 uv, float3 normal) {
     return output;
 }
 
+// Props (RenderPlugin::propPipeline): the model matrix comes per instance from
+// vertex binding 1 as glm's four columns, locations 4-7. ubo.model is unused.
+// Building a float4x4 from columns makes them its rows, so the vector goes on
+// the left: mul(v, M) = sum v[i] * c[i], which is glm's M * v.
+[shader("vertex")]
+VSOutput vertMainInstanced(float3 position, float3 color, float2 uv, float3 normal,
+                           float4 c0, float4 c1, float4 c2, float4 c3) {
+    float4x4 model = float4x4(c0, c1, c2, c3);
+    VSOutput output;
+    float4 world = mul(float4(position, 1.0), model);
+    output.position = mul(ubo.proj, mul(ubo.view, world));
+    output.color = color;
+    output.uv = uv;
+    // Same uniform-scale caveat as vertMain.
+    output.worldNormal = normalize(mul(normal, float3x3(c0.xyz, c1.xyz, c2.xyz)));
+    output.viewDir = ubo.cameraPos.xyz - world.xyz;
+    return output;
+}
+
 // Narkowicz's ACES fit. The swapchain is B8G8R8A8_SRGB, so it encodes gamma for us
 // and this must stay linear - do not add a pow(1/2.2) here.
 float3 tonemapACES(float3 x) {

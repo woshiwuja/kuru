@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vulkan/vulkan_raii.hpp>
 #include "../lighting/lighting.hpp"
 #include "../transform/transform.hpp"
@@ -48,12 +49,28 @@ struct Renderable {
 };
 
 struct DebugMesh {};
+struct Prop {};
+
+struct PropBatch {
+	std::shared_ptr<Mesh>     mesh;
+	std::shared_ptr<Material> material;
+	Renderable                renderable; // shared UBO: view/proj/lights/material
+	struct InstanceBuffer {
+		vk::raii::Buffer       buffer   = nullptr;
+		vk::raii::DeviceMemory memory   = nullptr;
+		glm::mat4             *mapped   = nullptr;
+		uint32_t               capacity = 0;
+	};
+	std::array<InstanceBuffer, MAX_FRAMES_IN_FLIGHT> instances; // vertex binding 1
+	uint32_t                                         count = 0;
+};
 
 struct RenderPlugin : Plugin {
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
 	vk::raii::Pipeline            debugPipeline       = nullptr;
+	vk::raii::Pipeline            propPipeline        = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
 
 	// GPU resources of despawned entities, kept until every frame that could
@@ -67,6 +84,7 @@ struct RenderPlugin : Plugin {
 	};
 	std::vector<Retired> retired;
 	uint64_t             frameCount = 0;
+	std::unordered_map<const Mesh *, PropBatch> propBatches;
 
 	void init(entt::registry &reg) override;
 	void start(entt::registry &reg) override;
@@ -83,15 +101,21 @@ struct RenderPlugin : Plugin {
 	void spawn(entt::registry &reg, entt::entity entity,
 	           std::shared_ptr<Mesh> mesh, std::shared_ptr<Texture> texture,
 	           glm::vec4 params, Transform transform = {});
+	void spawnProp(entt::registry &reg, entt::entity entity,
+	               std::shared_ptr<Mesh> mesh, std::shared_ptr<Texture> texture,
+	               Transform transform = {});
 	void despawn(entt::registry &reg, entt::entity entity);
 
+	[[nodiscard]] Renderable makeRenderable(const Mesh &mesh,
+	                                        const std::shared_ptr<Texture> &texture);
 	void updateUniforms(entt::registry &reg);
 	void drawMeshes(entt::registry &reg);
 };
 
 void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
                     const vk::raii::PipelineLayout &layout, uint32_t frameIndex,
-                    const Mesh &mesh, const Renderable &renderable);
+                    const Mesh &mesh, const Renderable &renderable,
+                    uint32_t instanceCount = 1);
 
 inline RenderPlugin &renderer(entt::registry &reg) {
   auto *plugin = reg.ctx().find<RenderPlugin *>();
@@ -106,3 +130,6 @@ std::shared_ptr<Texture> getTexture(entt::registry &reg,
 void spawn(entt::registry &reg, entt::entity entity,
            const std::string &meshPath, const std::string &texturePath,
            glm::vec4 params = {}, Transform transform = {});
+void spawnProp(entt::registry &reg, entt::entity entity,
+               const std::string &meshPath, const std::string &texturePath,
+               Transform transform = {});
