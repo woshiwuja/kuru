@@ -346,7 +346,7 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
 void Core::drawFrame() {
   static auto lastFrameTime = std::chrono::high_resolution_clock::now();
   const auto currentTime = std::chrono::high_resolution_clock::now();
-  deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime).count();
+  dt = std::chrono::duration<float>(currentTime - lastFrameTime).count();
   lastFrameTime = currentTime;
 
   auto fenceResult = device->device.waitForFences(

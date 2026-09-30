@@ -445,7 +445,6 @@ void NavigationPlugin::spawnDebug(entt::registry &reg, const DebugGeom &geom) {
 
 void NavigationPlugin::clearDebug(entt::registry &reg) {
   if (reg.valid(debugEntity)) {
-    // despawn aspetta il device: i buffer possono essere ancora in volo.
     renderer(reg).despawn(reg, debugEntity);
   }
   debugEntity = entt::null;
@@ -574,7 +573,7 @@ void NavigationPlugin::update(entt::registry &reg) {
     reg.erase<NavDest>(e);
   }
 
-  nav->crowd->update(Core::get()->deltaTime, nullptr);
+  nav->crowd->update(Core::get()->deltaTime(), nullptr);
 
   for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
     if (agent.idx < 0)

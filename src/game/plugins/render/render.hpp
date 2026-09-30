@@ -56,7 +56,20 @@ struct RenderPlugin : Plugin {
 	vk::raii::Pipeline            debugPipeline       = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
 
+	// GPU resources of despawned entities, kept until every frame that could
+	// reference them has retired. Declared after descriptorPool so the sets go
+	// first on destruction.
+	struct Retired {
+		uint64_t                  frame = 0;
+		Renderable                renderable;
+		std::shared_ptr<Mesh>     mesh;
+		std::shared_ptr<Material> material;
+	};
+	std::vector<Retired> retired;
+	uint64_t             frameCount = 0;
+
 	void init(entt::registry &reg) override;
+	void start(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
 
 	void createDescriptorSetLayout();

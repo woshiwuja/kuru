@@ -15,6 +15,7 @@
 #include "plugins/ui/ui.hpp"
 #include "plugins/material/material.hpp"
 #include "plugins/default.hpp"
+#include "plugins/pausing/pausing.hpp"
 #include "plugins/physics/physics.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -46,6 +47,7 @@ int main()
 		app.addPlugin(std::make_unique<InventoryPlugin>());
 		app.addPlugin(std::make_unique<NamePlugin>());
 		app.addPlugin(std::make_unique<MaterialPlugin>());
+		app.addPlugin(std::make_unique<PausingPlugin>());
 		app.init();
 		app.run();
 		app.end();

@@ -178,14 +178,24 @@ void RenderPlugin::createDescriptorPool() {
       vk::raii::DescriptorPool(Core::get()->device->device, poolInfo);
 }
 
+// Runs after drawFrame has waited this slot's fence. Anything retired at frame
+// N was used by frames <= N at most, and frame N's fence has been waited once
+// MAX_FRAMES_IN_FLIGHT more frames have started.
+void RenderPlugin::start(entt::registry &reg) {
+  ++frameCount;
+  std::erase_if(retired, [this](const Retired &r) {
+    return r.frame + MAX_FRAMES_IN_FLIGHT <= frameCount;
+  });
+}
+
 void RenderPlugin::update(entt::registry &reg) {
   auto *core = Core::get();
   updateUniforms(reg);
   drawMeshes(reg);
   ImGui::ShowDemoWindow();
   if (ImGui::Begin("Scene")) {
-    ImGui::Text("%.1f fps (%.2f ms)", 1.0f / std::max(core->deltaTime, 1e-6f),
-                core->deltaTime * 1000.0f);
+    ImGui::Text("%.1f fps (%.2f ms)", 1.0f / std::max(core->deltaTime(), 1e-6f),
+                core->deltaTime() * 1000.0f);
     ImGui::Text("drawables: %zu", reg.view<MeshRef>().size());
     ImGui::Text("swapchain: %ux%u", core->graphics->swapChainExtent.width,
                 core->graphics->swapChainExtent.height);
@@ -287,7 +297,14 @@ void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
 }
 
 void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
-  Core::get()->device->wait();
+  Retired r{.frame = frameCount};
+  if (auto *c = reg.try_get<Renderable>(entity))
+    r.renderable = std::move(*c);
+  if (auto *c = reg.try_get<MeshRef>(entity))
+    r.mesh = std::move(c->mesh);
+  if (auto *c = reg.try_get<MaterialRef>(entity))
+    r.material = std::move(c->material);
+  retired.push_back(std::move(r));
   reg.destroy(entity);
 }
 

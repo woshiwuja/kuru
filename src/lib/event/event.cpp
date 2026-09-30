@@ -25,9 +25,6 @@ void EventManager::pump() {
       wheel += event.wheel.y;
       break;
     case SDL_EVENT_KEY_DOWN:
-      if (event.key.key == SDLK_ESCAPE) {
-        quit = true;
-      }
       break;
     default:
       break;

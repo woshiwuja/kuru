@@ -20,7 +20,6 @@ void LightingPlugin::update(entt::registry &reg) {
     light.direction =
         glm::vec4(glm::normalize(glm::vec3(light.direction)), light.direction.w);
   };
-
   UI(reg);
 }
 

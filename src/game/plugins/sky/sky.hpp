@@ -34,14 +34,14 @@ struct SkyPlugin : Plugin {
 	std::vector<vk::raii::DeviceMemory>  skyUniformBuffersMemory;
 	std::vector<void *>                  skyUniformBuffersMapped;
 	std::vector<vk::raii::DescriptorSet> skyDescriptorSets;
-	float skyTime = 0.0f; // iTime: seconds since startup, accumulated from deltaTime
+	float skyTime = 0.0f;
 
 	void init(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
 
 	void createSkyDescriptorSetLayout();
 	void createSkyPipeline();
-	void createSkyResources(); // noise texture, per-frame UBOs, descriptor sets
+	void createSkyResources(); 
 
 	void updateSkyUniforms(entt::registry &reg);
 	void drawSky(entt::registry &reg);

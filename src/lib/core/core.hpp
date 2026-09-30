@@ -47,11 +47,14 @@ struct Core {
   void run();
   void end();
 
-  // Defined in core.cpp, not inline: an inline member would give the DLL and
-  // each consumer its own copy. (`instance` is the vk::raii::Instance member.)
   static Core *s_instance;
-  // Seconds since the previous frame, refreshed at the top of drawFrame.
-  float deltaTime = 0.0f;
+  bool paused = false;
+  float deltaTime() const {
+    return paused ? 0.0f : dt; 
+  }
+  float deltaTime(float scale) const {
+    return paused ? 0.0f : dt* scale; 
+  }
   std::vector<vk::raii::CommandBuffer> commandBuffers;
   std::unique_ptr<Sync> sync = nullptr;
 
@@ -76,5 +79,7 @@ struct Core {
   void drawFrame();
   [[nodiscard]] std::vector<const char *> getRequiredInstanceExtensions() const;
   [[nodiscard]] bool checkValidationLayerSupport() const;
+  private:
+  float dt = 0.0f;
 };
 } // namespace KR

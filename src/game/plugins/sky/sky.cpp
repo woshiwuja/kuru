@@ -259,7 +259,7 @@ void SkyPlugin::updateSkyUniforms(entt::registry &reg) {
   }
   const Sky &sky = skyView.get<Sky>(*skyView.begin());
   const auto &frame = reg.ctx().get<FrameContext>();
-  skyTime += Core::get()->deltaTime * .1f;
+  skyTime += Core::get()->deltaTime() * .1f;
   // Rotation only: dropping the view matrix's translation is what keeps the
   // sky from shifting as the camera moves, while still rotating with it.
   glm::mat4 viewRotOnly = glm::mat4(glm::mat3(frame.view));

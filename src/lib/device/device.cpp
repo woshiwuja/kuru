@@ -167,8 +167,9 @@ void Device::endSingleTimeCommands(
 
   vk::SubmitInfo submitInfo{.commandBufferCount = 1,
                             .pCommandBuffers = &*commandBuffer};
-  queue.submit(submitInfo, nullptr);
-  queue.waitIdle();
+  vk::raii::Fence fence(device, vk::FenceCreateInfo{});
+  queue.submit(submitInfo, *fence);
+  (void)device.waitForFences(*fence, vk::True, UINT64_MAX);
 }
 
 void Device::copyBuffer(vk::raii::Buffer &srcBuffer,

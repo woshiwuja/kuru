@@ -45,7 +45,7 @@ void CameraPlugin::update(entt::registry &reg) {
 void Camera::control(FrameContext &frame){
     const auto *core = Core::get();
     const auto &input = *core->eventManager;
-    const float deltaTime = core->deltaTime;
+    const float dt = core->deltaTime();
     const bool orbiting =
         input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse;
     if (orbiting) {
@@ -60,10 +60,10 @@ void Camera::control(FrameContext &frame){
     SDL_SetWindowRelativeMouseMode(core->window->window, orbiting);
     const bool keyboardFree = !frame.uiCapturesKeyboard;
     if (keyboardFree && input.down(SDL_SCANCODE_Q)) {
-      yaw -= turnSpeed * deltaTime;
+      yaw -= turnSpeed * dt;
     }
     if (keyboardFree && input.down(SDL_SCANCODE_E)) {
-      yaw += turnSpeed * deltaTime;
+      yaw += turnSpeed * dt;
     }
     pitch = std::clamp(pitch, -89.0f, 89.0f);
 
@@ -78,7 +78,7 @@ void Camera::control(FrameContext &frame){
         glm::normalize(glm::vec3{front.x, 0.0f, front.z});
     const glm::vec3 flatRight = glm::normalize(glm::cross(flatFront, WORLD_UP));
 
-    const float step = panSpeed * deltaTime;
+    const float step = panSpeed * dt;
     if (keyboardFree && input.down(SDL_SCANCODE_W)) pivot += flatFront * step;
     if (keyboardFree && input.down(SDL_SCANCODE_S)) pivot -= flatFront * step;
     if (keyboardFree && input.down(SDL_SCANCODE_D)) pivot += flatRight * step;
