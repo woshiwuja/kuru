@@ -4,6 +4,7 @@
 #include "entt/entity/fwd.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
+#include "ImGuizmo.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
@@ -95,6 +96,8 @@ void Camera::control(FrameContext &frame){
     // sky_clouds.slang unprojects assuming this (pre-reversal) NDC convention.
     frame.skyRayProj = frame.proj;
 
+    viewCube(frame);
+
     // Reversed-Z: near maps to depth 1, far to depth 0. A standard depth buffer
     // spends almost all of its precision within the first few percent of
     // [nearPlane, farPlane]; this flip (needs GLM_FORCE_DEPTH_ZERO_TO_ONE, set
@@ -106,6 +109,30 @@ void Camera::control(FrameContext &frame){
                                      0, 0, 1, 1);
     frame.proj = REVERSE_Z * frame.proj;
 };
+
+void Camera::viewCube(FrameContext &frame) {
+    constexpr float size = 128.0f;
+    const ImGuiViewport *vp = ImGui::GetMainViewport();
+    glm::mat4 glProj = frame.skyRayProj;
+    glProj[1][1] *= -1;
+    glm::mat4 identity(1.0f);
+    glm::mat4 view = frame.view;
+    ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+    ImGuizmo::ViewManipulate(&view[0][0], &glProj[0][0], ImGuizmo::TRANSLATE,
+                             ImGuizmo::WORLD, &identity[0][0],
+                             distance, {vp->Pos.x + vp->Size.x - size, vp->Pos.y},
+                             {size, size}, 0x10101010);
+    if (ImGuizmo::IsViewManipulateHovered() || ImGuizmo::IsUsingViewManipulate())
+      frame.uiCapturesMouse = true;
+    if (view == frame.view)
+      return;
+    const glm::vec3 f = -glm::vec3(glm::inverse(view)[2]);
+    if (f.x * f.x + f.z * f.z > 1e-6f)
+      yaw = glm::degrees(std::atan2(f.z, f.x));
+    pitch = std::clamp(glm::degrees(std::asin(std::clamp(f.y, -1.0f, 1.0f))),
+                       -89.0f, 89.0f);
+    frame.view = glm::lookAt(position(), pivot, WORLD_UP);
+}
 
 void CameraPlugin::UI(entt::registry &reg){
     using namespace ImGui;

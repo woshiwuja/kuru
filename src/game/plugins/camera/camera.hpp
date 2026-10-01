@@ -29,6 +29,7 @@ namespace KR{
 	[[nodiscard]] glm::vec3 position() const;
 
 	void control(FrameContext &frame);
+	void viewCube(FrameContext &frame);
     };
 
     struct MainCamera {};

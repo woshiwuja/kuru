@@ -13,3 +13,5 @@ imgui.ini
 
 *.glb
 .vscode/c_cpp_properties.json
+.zed/tasks.json
+.gitignore

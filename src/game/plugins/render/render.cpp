@@ -184,6 +184,12 @@ void RenderPlugin::createGraphicsPipeline() {
   debugPipeline = vk::raii::Pipeline(
       core->device->device, nullptr,
       pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+  rasterizer.polygonMode = vk::PolygonMode::eLine;
+  depthStencil.depthTestEnable = vk::False;
+  debugWirePipeline = vk::raii::Pipeline(
+      core->device->device, nullptr,
+      pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
 void RenderPlugin::createDescriptorPool() {
@@ -488,7 +494,14 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
 
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *debugPipeline);
   for (auto [entity, meshRef, renderable] :
-       reg.view<MeshRef, Renderable, DebugMesh>().each()) {
+       reg.view<MeshRef, Renderable, DebugMesh>(entt::exclude<DebugWire>).each()) {
+    drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
+                   *meshRef.mesh, renderable);
+  }
+
+  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *debugWirePipeline);
+  for (auto [entity, meshRef, renderable] :
+       reg.view<MeshRef, Renderable, DebugWire>().each()) {
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
                    *meshRef.mesh, renderable);
   }

@@ -49,6 +49,7 @@ struct Renderable {
 };
 
 struct DebugMesh {};
+struct DebugWire {};
 struct Prop {};
 
 struct PropBatch {
@@ -70,6 +71,7 @@ struct RenderPlugin : Plugin {
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
 	vk::raii::Pipeline            debugPipeline       = nullptr;
+	vk::raii::Pipeline            debugWirePipeline   = nullptr;
 	vk::raii::Pipeline            propPipeline        = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
 

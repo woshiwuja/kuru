@@ -109,6 +109,11 @@ FetchContent_Declare(imgui
   GIT_TAG v1.92.9b-docking
   GIT_SHALLOW TRUE
   SOURCE_SUBDIR no-configure)
+# Same kind of drop. Pinned to a master commit: the release tags predate imgui 1.92.
+FetchContent_Declare(imguizmo
+  GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+  GIT_TAG 18cef5e031d8c6973d80284c67f60549fafd78c1
+  SOURCE_SUBDIR no-configure)
 # Jolt's Vulkan backend adds Vulkan_INCLUDE_DIRS as a PUBLIC include dir, which CMake
 # rejects because the SDK sits inside our source tree. ponytail: we don't use Jolt on the GPU
 set(JPH_USE_VK OFF)
@@ -136,7 +141,7 @@ FetchContent_Declare(recastnavigation
   GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
   GIT_TAG v1.6.0
   GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui jolt recastnavigation)
+FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui imguizmo jolt recastnavigation)
 
 file(GLOB_RECURSE KURU_LIB_SRC src/lib/*.cpp)
 file(GLOB_RECURSE KURU_GAME_SRC src/game/*.cpp)
@@ -148,7 +153,8 @@ set(IMGUI_SRC
   ${imgui_SOURCE_DIR}/imgui_demo.cpp # ui.cpp calls ImGui::ShowDemoWindow
   ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp # InputText on std::string
   ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp)
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+  ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp) # here too: its context is a global like GImGui
 
 # The engine (namespace KR), consumed through src/lib/Kuru.h.
 # WINDOWS_EXPORT_ALL_SYMBOLS: no per-symbol __declspec sprinkling; CMake writes
@@ -160,7 +166,7 @@ set(IMGUI_SRC
 add_library(KuruLib SHARED ${KURU_LIB_SRC} ${IMGUI_SRC})
 set_target_properties(KuruLib PROPERTIES OUTPUT_NAME Kuru WINDOWS_EXPORT_ALL_SYMBOLS ON)
 # PUBLIC: debug.hpp includes imgui.h and Kuru.h includes debug.hpp.
-target_include_directories(KuruLib PUBLIC src/lib ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_include_directories(KuruLib PUBLIC src/lib ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${imguizmo_SOURCE_DIR}/src)
 # PUBLIC: these all appear in Kuru.h's own headers, so consumers need them too.
 # Jolt and SDL3 build shared (see the FetchContent_Declare comments above) so
 # there is exactly one instance of each process-wide, even though both

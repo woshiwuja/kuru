@@ -2,6 +2,7 @@
 #include <Kuru.h>
 #include "entt/entity/fwd.hpp"
 #include "imgui.h"
+#include "ImGuizmo.h"
 #include "../render/render.hpp"
 
 using namespace KR;
@@ -19,6 +20,7 @@ void UIPlugin::start(entt::registry &reg) {
   ImGui_ImplVulkan_NewFrame();
   ImGui_ImplSDL3_NewFrame();
   ImGui::NewFrame();
+  ImGuizmo::BeginFrame();
 
   ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                ImGuiDockNodeFlags_PassthruCentralNode);

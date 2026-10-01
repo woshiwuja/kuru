@@ -2,6 +2,7 @@
 #include <Kuru.h>
 #include <Jolt/Jolt.h>
 #include "../transform/transform.hpp"
+#include "../render/render.hpp"
 #include "Jolt/Physics/Body/BodyCreationSettings.h"
 #include "Jolt/Physics/Body/BodyID.h"
 #include "Jolt/Physics/Body/BodyInterface.h"
@@ -14,17 +15,15 @@
 #include "entt/entity/fwd.hpp"
 #include "imgui.h"
 #include "plugin/plugin.hpp"
+#include <unordered_map>
 
 using namespace KR;
 
-// Position/rotation live on the body, so a changed Transform is a teleport.
-// Only written when it actually differs: this runs every frame for every
-// inactive body and each call costs a broadphase update.
 inline void syncBodyToTransform(JPH::BodyInterface &bodies, JPH::BodyID id,
                                 const Transform &t) {
   const JPH::RVec3 p(t.position.x, t.position.y, t.position.z);
   const glm::quat r =
-      glm::normalize(t.rotation); // SetPositionAndRotation asserts on this
+      glm::normalize(t.rotation);
   const JPH::Quat q(r.x, r.y, r.z, r.w);
   if (p == bodies.GetPosition(id) && q == bodies.GetRotation(id))
     return;
@@ -61,14 +60,98 @@ inline void syncShapeScale(JPH::BodyInterface &bodies, JPH::BodyID id,
   }
 }
 
+// Shape triangles in center-of-mass space, scale included: the entity drawing
+// them only needs the body's COM transform. Null for shapes without triangles.
+inline std::shared_ptr<Mesh> bodyWireMesh(const JPH::Shape &shape,
+                                          glm::vec3 color) {
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+  // Only leaf shapes have triangles. Unwrap the ScaledShape syncShapeScale adds.
+  const JPH::Shape *leaf = &shape;
+  JPH::Vec3 scale = JPH::Vec3::sOne();
+  if (shape.GetSubType() == JPH::EShapeSubType::Scaled) {
+    const auto *scaled = static_cast<const JPH::ScaledShape *>(&shape);
+    leaf = scaled->GetInnerShape();
+    scale = scaled->GetScale();
+  }
+  // ponytail: compounds/other decorators get no wire; walk them with
+  // CollectTransformedShapes if they ever show up.
+  if (leaf->GetType() == JPH::EShapeType::Compound ||
+      leaf->GetType() == JPH::EShapeType::Decorated)
+    return nullptr;
+  JPH::Shape::GetTrianglesContext ctx;
+  leaf->GetTrianglesStart(ctx, JPH::AABox::sBiggest(), JPH::Vec3::sZero(),
+                          JPH::Quat::sIdentity(), scale);
+  constexpr int batch = JPH::Shape::cGetTrianglesMinTrianglesRequested;
+  JPH::Float3 tris[3 * batch];
+  while (int n = leaf->GetTrianglesNext(ctx, batch, tris)) {
+    for (int i = 0; i < 3 * n; i++) {
+      indices.push_back(static_cast<uint32_t>(vertices.size()));
+      vertices.push_back(Vertex{.pos = {tris[i].x, tris[i].y, tris[i].z},
+                                .color = color,
+                                .texCoord = {0.0f, 0.0f},
+                                .normal = {0.0f, 1.0f, 0.0f}});
+    }
+  }
+  if (indices.empty())
+    return nullptr;
+  auto mesh = std::make_shared<Mesh>();
+  mesh->upload(vertices, indices);
+  return mesh;
+}
+
 struct PhysicsPlugin : public Plugin {
 
   glm::vec3 gravity{0, -9.81f, 0};
+
+  bool drawBodies = false;
+  glm::vec3 wireColor{0.2f, 1.0f, 0.3f};
+  struct BodyWire {
+    entt::entity entity = entt::null; // null: shape had no triangles
+    JPH::RefConst<JPH::Shape> shape;
+  };
+  std::unordered_map<entt::entity, BodyWire> wires;
   void init(entt::registry &reg) override {
     auto &s = Core::get()->physicsManager.get()->system;
     auto &b = Core::get()->physicsManager.get()->bodies();
     s.SetGravity(glmVecToJPH(gravity));
     registerComponent<JPH::BodyCreationSettings>();}
+
+  // Spawning/despawning renderables only here: in update() the frame's
+  // command buffer already references them (see NavigationPlugin::start).
+  void start(entt::registry &reg) override {
+    auto &bodies = Core::get()->physicsManager.get()->bodies();
+    auto &render = renderer(reg);
+    for (auto it = wires.begin(); it != wires.end();) {
+      const auto *id =
+          reg.valid(it->first) ? reg.try_get<JPH::BodyID>(it->first) : nullptr;
+      if (drawBodies && id && bodies.GetShape(*id) == it->second.shape) {
+        ++it;
+        continue;
+      }
+      if (reg.valid(it->second.entity))
+        render.despawn(reg, it->second.entity);
+      it = wires.erase(it);
+    }
+    if (!drawBodies)
+      return;
+    for (auto [e, id] : reg.view<JPH::BodyID>().each()) {
+      if (wires.contains(e))
+        continue;
+      BodyWire wire{.shape = bodies.GetShape(id)};
+      // ponytail: one mesh per body, rebuilt on shape change. Many identical
+      // bodies would want a per-shape cache.
+      if (auto mesh = bodyWireMesh(*wire.shape, wireColor)) {
+        wire.entity = reg.create();
+        render.spawn(reg, wire.entity, std::move(mesh), getTexture(reg, ""),
+                     {2.0f, 1.0f, 0.0f, 0.0f});
+        reg.emplace<DebugMesh>(wire.entity);
+        reg.emplace<DebugWire>(wire.entity);
+      }
+      wires.emplace(e, std::move(wire));
+    }
+  }
+
   void update(entt::registry &reg) override {
     auto *physics = Core::get()->physicsManager.get();
     auto &bodies = physics->bodies();
@@ -78,6 +161,14 @@ struct PhysicsPlugin : public Plugin {
       // the null shape computing mass. Give it one; the inspector can swap it.
       if (!settings.GetShape())
         settings.SetShape(new JPH::SphereShape(1.0f));
+      // The Transform owns position/rotation (see below), so the body starts
+      // there, not wherever the settings say (origin for inspector "add").
+      // Scale is applied after creation by syncShapeScale.
+      if (const auto *t = reg.try_get<Transform>(e)) {
+        const glm::quat r = glm::normalize(t->rotation);
+        settings.mPosition = JPH::RVec3(t->position.x, t->position.y, t->position.z);
+        settings.mRotation = JPH::Quat(r.x, r.y, r.z, r.w);
+      }
       // Re-adding settings to an entity that already has a body replaces it.
       if (auto *old = reg.try_get<JPH::BodyID>(e)) {
         bodies.RemoveBody(*old);
@@ -104,6 +195,17 @@ struct PhysicsPlugin : public Plugin {
       }
       syncShapeScale(bodies, id, t.scale);
     }
+    for (auto &[e, wire] : wires) {
+      const auto *id = reg.valid(e) ? reg.try_get<JPH::BodyID>(e) : nullptr;
+      auto *t = reg.valid(wire.entity) ? reg.try_get<Transform>(wire.entity)
+                                       : nullptr;
+      if (!id || !t)
+        continue;
+      const JPH::RVec3 p = bodies.GetCenterOfMassPosition(*id);
+      const JPH::Quat q = bodies.GetRotation(*id);
+      t->position = {p.GetX(), p.GetY(), p.GetZ()};
+      t->rotation = glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ());
+    }
     UI(reg);
   }
   void UI(entt::registry &r) {
@@ -114,6 +216,7 @@ struct PhysicsPlugin : public Plugin {
     if (DragFloat3("Gravity", &gravity.x, 0.1, -100, 100)) {
       s.SetGravity(glmVecToJPH(gravity));
     }
+    Checkbox("Draw Bodies", &drawBodies);
     for (auto [e, id] : r.view<JPH::BodyID>().each()) {
       PushID(static_cast<int>(entt::to_integral(e)));
       if (TreeNode("Body", "Body %u", id.GetIndex()))
@@ -170,6 +273,50 @@ struct PhysicsPlugin : public Plugin {
         }
         EndCombo();
       }
+
+      // Jolt shapes are immutable: an edit builds a replacement. 0.1 floor
+      // keeps sizes above the default convex radius (0.05), which Jolt asserts on.
+      auto size = [](const char *label, float &v) {
+        return DragFloat(label, &v, 0.01f, 0.1f, 1000.0f, "%.3f",
+                         ImGuiSliderFlags_AlwaysClamp);
+      };
+      JPH::Ref<JPH::Shape> s;
+      switch (sub) {
+      case JPH::EShapeSubType::Sphere: {
+        float r = static_cast<const JPH::SphereShape *>(shape.GetPtr())->GetRadius();
+        if (size("Radius", r))
+          s = new JPH::SphereShape(r);
+        break;
+      }
+      case JPH::EShapeSubType::Box: {
+        JPH::Vec3 h = static_cast<const JPH::BoxShape *>(shape.GetPtr())->GetHalfExtent();
+        float f[3] = {h.GetX(), h.GetY(), h.GetZ()};
+        if (DragFloat3("Half Extent", f, 0.01f, 0.1f, 1000.0f, "%.3f",
+                       ImGuiSliderFlags_AlwaysClamp))
+          s = new JPH::BoxShape(JPH::Vec3(f[0], f[1], f[2]));
+        break;
+      }
+      case JPH::EShapeSubType::Capsule: {
+        const auto *c = static_cast<const JPH::CapsuleShape *>(shape.GetPtr());
+        float hh = c->GetHalfHeightOfCylinder(), r = c->GetRadius();
+        if (size("Half Height", hh) | size("Radius", r))
+          s = new JPH::CapsuleShape(hh, r);
+        break;
+      }
+      case JPH::EShapeSubType::Cylinder: {
+        const auto *c = static_cast<const JPH::CylinderShape *>(shape.GetPtr());
+        float hh = c->GetHalfHeight(), r = c->GetRadius();
+        if (size("Half Height", hh) | size("Radius", r))
+          s = new JPH::CylinderShape(hh, r);
+        break;
+      }
+      default:
+        TextDisabled("(no editable parameters)");
+        break;
+      }
+      // syncShapeScale re-wraps it with the Transform scale next frame.
+      if (s)
+        b.SetShape(id, s, true, JPH::EActivation::Activate);
     }
 
     int layer = b.GetObjectLayer(id);
@@ -177,8 +324,6 @@ struct PhysicsPlugin : public Plugin {
     if (Combo("Object Layer", &layer, layers, NUM_LAYERS))
       b.SetObjectLayer(id, JPH::ObjectLayer(layer));
 
-    // Static bodies created without mAllowDynamicOrKinematic have no motion
-    // properties, and Jolt asserts on switching them to anything else.
     bool canMove;
     {
       JPH::BodyLockRead lock(
