@@ -21,11 +21,8 @@ void clean(entt::registry &r){
             fallen.push_back(e);
         }
     }
-    auto &bodies = Core::get()->physicsManager.get()->bodies();
+    // The body goes with the BodyID: see PhysicsPlugin::removeBody.
     for (auto e : fallen) {
-        const JPH::BodyID b = r.get<JPH::BodyID>(e);
-        bodies.RemoveBody(b);
-        bodies.DestroyBody(b);
         renderer(r).despawn(r, e);
     }
 }

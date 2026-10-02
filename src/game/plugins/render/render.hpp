@@ -48,6 +48,18 @@ struct Renderable {
 	Renderable &operator=(Renderable &&)      = default;
 };
 
+// What a path-based spawn()/spawnProp() was made from. Plain data, so it is
+// saved, and RenderPlugin::load re-spawns MeshRef/MaterialRef/Renderable from
+// it. Entities spawned from an in-memory mesh have none and aren't restored.
+struct Model {
+	// ponytail: fixed buffers keep it trivially copyable for SaveFile; give
+	// SaveFile string support if paths ever outgrow 127 chars.
+	char mesh[128] = "";
+	char texture[128] = "";
+	glm::vec4 params{0.0f};
+	bool prop = false;
+};
+
 struct DebugMesh {};
 struct DebugWire {};
 struct Prop {};
@@ -67,7 +79,14 @@ struct PropBatch {
 };
 
 struct RenderPlugin : Plugin {
-	RenderPlugin() { registerComponent<Renderable>(); }
+	RenderPlugin() {
+		registerComponent<Renderable>();
+		registerComponent<MeshRef>();
+		registerComponent<Prop>();
+		registerComponent<DebugMesh>();
+		registerComponent<DebugWire>();
+		registerComponent<Model>();
+	}
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
@@ -92,6 +111,8 @@ struct RenderPlugin : Plugin {
 	void init(entt::registry &reg) override;
 	void start(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
+	void save(entt::registry &reg, SaveFile &file) override;
+	void load(entt::registry &reg, SaveFile &file) override;
 
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();

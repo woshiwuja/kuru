@@ -80,7 +80,9 @@ struct Core {
   [[nodiscard]] std::vector<const char *> getRequiredInstanceExtensions() const;
   [[nodiscard]] bool checkValidationLayerSupport() const;
   void save(const char* path);
-  void load(const char* path);
+  void load(const char* path); // queued: runs between frames, see mainLoop
+  std::string pendingLoad;
+  void loadNow(const char* path);
   private:
   float dt = 0.0f;
 };

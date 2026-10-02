@@ -36,6 +36,7 @@ struct LocalTransform : public Transform {};
 struct TransformPlugin : public Plugin {
   TransformPlugin(){
     registerComponent<Transform>();
+    registerComponent<Relationship>();
   };
   void init(entt::registry &r) override {};
   ImGuizmo::OPERATION gizmoOp = ImGuizmo::TRANSLATE;

@@ -6,6 +6,7 @@ using namespace KR;
 using namespace entt::literals;
 
 struct InspectorPlugin : public Plugin {
+  InspectorPlugin() { registerComponent<Selected>(); }
   void update(entt::registry &r) override { UI(r); }
 
   void UI(entt::registry &r) {

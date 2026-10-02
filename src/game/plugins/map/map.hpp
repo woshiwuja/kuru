@@ -18,6 +18,7 @@ using namespace KR;
 
 struct Map {};
 struct MapPlugin : public Plugin {
+    MapPlugin() { registerComponent<Map>(); }
     void init(entt::registry &reg)override{
         // The heightfield is built in raw mesh units; PhysicsPlugin scales the
         // shape from this Transform, so the map resizes from one place.

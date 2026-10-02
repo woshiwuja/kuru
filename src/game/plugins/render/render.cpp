@@ -232,6 +232,55 @@ void RenderPlugin::update(entt::registry &reg) {
   ImGui::End();
 }
 
+// The material editor's values: the rest of a Material is textures and GPU
+// state that re-spawning from Model rebuilds.
+struct MaterialValues {
+  glm::vec4 color;
+  float metallic, roughness, alphaCutoff;
+  bool alphaMask;
+};
+
+void RenderPlugin::save(entt::registry &reg, SaveFile &file) {
+  auto view = reg.view<Model, MaterialRef>();
+  file(static_cast<uint32_t>(view.size_hint()));
+  for (auto [e, model, ref] : view.each()) {
+    const Material &m = *ref.material;
+    file(e);
+    file(MaterialValues{m.color, m.metallic, m.roughness, m.alphaCutoff,
+                        m.alphaMask});
+  }
+}
+
+// Loaded entities have Transform and Model but none of the GPU-side
+// components: spawn them again from the saved paths.
+void RenderPlugin::load(entt::registry &reg, SaveFile &file) {
+  auto view = reg.view<Model>();
+  const std::vector<entt::entity> entities(view.begin(), view.end());
+  for (entt::entity e : entities) {
+    const Model model = reg.get<Model>(e); // copy: spawn() replaces it
+    if (model.prop)
+      ::spawnProp(reg, e, model.mesh, model.texture);
+    else
+      ::spawn(reg, e, model.mesh, model.texture, model.params);
+  }
+  uint32_t count = 0;
+  file(count);
+  while (count--) {
+    entt::entity e;
+    MaterialValues v;
+    file(e);
+    file(v);
+    if (auto *ref = reg.try_get<MaterialRef>(e)) {
+      Material &m = *ref->material;
+      m.color = v.color;
+      m.metallic = v.metallic;
+      m.roughness = v.roughness;
+      m.alphaCutoff = v.alphaCutoff;
+      m.alphaMask = v.alphaMask;
+    }
+  }
+}
+
 void RenderPlugin::spawn(entt::registry &reg, entt::entity entity,
                          std::shared_ptr<Mesh> mesh,
                          std::shared_ptr<Texture> texture, glm::vec4 params,
@@ -260,7 +309,7 @@ void RenderPlugin::spawnProp(entt::registry &reg, entt::entity entity,
     reg.emplace<Transform>(entity, transform);
   }
   reg.emplace<MeshRef>(entity, std::move(mesh));
-  reg.emplace<Prop>(entity);
+  reg.emplace_or_replace<Prop>(entity); // already there on a loaded prop
 }
 
 // Requires MeshRef to already be on `entity` - RenderPlugin::spawn emplaces
@@ -526,9 +575,22 @@ std::shared_ptr<Texture> getTexture(entt::registry &reg,
       .first->second.handle();
 }
 
+static void setModel(entt::registry &reg, entt::entity entity,
+                     const std::string &meshPath,
+                     const std::string &texturePath, glm::vec4 params,
+                     bool prop) {
+  assert(meshPath.size() < sizeof(Model::mesh) &&
+         texturePath.size() < sizeof(Model::texture));
+  Model m{.params = params, .prop = prop};
+  snprintf(m.mesh, sizeof(m.mesh), "%s", meshPath.c_str());
+  snprintf(m.texture, sizeof(m.texture), "%s", texturePath.c_str());
+  reg.emplace_or_replace<Model>(entity, m);
+}
+
 void spawn(entt::registry &reg, entt::entity entity,
            const std::string &meshPath, const std::string &texturePath,
            glm::vec4 params, Transform transform) {
+  setModel(reg, entity, meshPath, texturePath, params, false);
   std::shared_ptr<Texture> fallbackTexture = getTexture(reg, texturePath);
   renderer(reg).spawn(reg, entity, getMesh(reg, meshPath).handle(),
                       std::move(fallbackTexture), params, transform);
@@ -537,6 +599,7 @@ void spawn(entt::registry &reg, entt::entity entity,
 void spawnProp(entt::registry &reg, entt::entity entity,
                const std::string &meshPath, const std::string &texturePath,
                Transform transform) {
+  setModel(reg, entity, meshPath, texturePath, {}, true);
   renderer(reg).spawnProp(reg, entity, getMesh(reg, meshPath).handle(),
                           getTexture(reg, texturePath), transform);
 }

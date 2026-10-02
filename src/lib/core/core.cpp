@@ -190,6 +190,13 @@ void Core::mainLoop() {
   while (running) {
     eventManager->pump();
     running = !eventManager->quit;
+    // Here, not mid-frame: clearing the registry while recording frees
+    // buffers this frame and the one in flight still use.
+    if (!pendingLoad.empty()) {
+      device->wait();
+      loadNow(pendingLoad.c_str());
+      pendingLoad.clear();
+    }
     drawFrame();
   }
   device->wait();
@@ -431,19 +438,40 @@ bool Core::checkValidationLayerSupport() const {
                                                lp.layerName) == 0);
                               }));
 }
+// The file starts with the registered types' ids in order. Pools are raw
+// bytes in that order, so a file is only loadable by a build that registers
+// the same types in the same order.
 void Core::save(const char* path){
   	SaveFile savefile{path, true};
+		savefile(serialTypes().size());
+		for (auto &e : serialTypes()) savefile(e.id);
 		Saver s{reg};
 		s.get<entt::entity>(savefile);
 		for (auto &e : serialTypes()) e.save(s, savefile);
+		for (auto &p : plugins) p->save(reg, savefile);
 };
-void Core::load(const char *path) {
-  reg.clear(); // the file is the truth
+void Core::load(const char *path) { pendingLoad = path; }
+void Core::loadNow(const char *path) {
   SaveFile savefile{path, false};
+  size_t count = 0;
+  savefile(count);
+  bool match = savefile.f && count == serialTypes().size();
+  for (size_t i = 0; match && i < count; i++) {
+    entt::id_type id{};
+    savefile(id);
+    match = savefile.f && id == serialTypes()[i].id;
+  }
+  if (!match) {
+    fprintf(stderr, "load: %s was saved by a build with other components\n", path);
+    return; // before clear(): the current world survives a bad file
+  }
+  reg.clear(); // the file is the truth
   Loader l{reg};
   l.get<entt::entity>(savefile);
   for (auto &e : serialTypes())
     e.load(l, savefile);
   l.orphans();
+  for (auto &p : plugins)
+    p->load(reg, savefile);
 }
 } // namespace KR

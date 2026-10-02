@@ -9,9 +9,7 @@ using namespace KR;
 
 // One entity carrying this drives the sky; SkyPlugin::init creates it.
 struct Sky {
-	glm::vec4 color{1.0f}; // sky dome tint; see skyTint in sky_clouds.slang
-	// Was the first DirectionalLight's color: now set it here, the procedural
-	// sky only ever models the one sun.
+	glm::vec4 color{1.0f};
 	glm::vec4 sunColor{1.0f};
 };
 
@@ -36,6 +34,9 @@ struct SkyPlugin : Plugin {
 	std::vector<vk::raii::DescriptorSet> skyDescriptorSets;
 	float skyTime = 0.0f;
 
+	SkyPlugin(){
+		registerComponent<Sky>();
+	}
 	void init(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
 

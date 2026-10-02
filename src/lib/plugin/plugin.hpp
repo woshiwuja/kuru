@@ -13,6 +13,7 @@ using Saver = entt::basic_snapshot<entt::registry>;
 using Loader = entt::basic_snapshot_loader<entt::registry>;
 
 struct SerialEntry {
+  entt::id_type id; // type_hash: tags the type's pool in the save file
   void (*save)(Saver &, SaveFile &);
   void (*load)(Loader &, SaveFile &);
 };
@@ -39,9 +40,15 @@ template <typename T> void metaRemove(entt::registry &r, entt::entity e) {
 
 template <typename T> void registerComponent() {
   using namespace entt::literals;
-  static bool once =
-      (serialTypes().push_back({&metaSave<T>, &metaLoad<T>}), true);
-  (void)once;
+  // SaveFile writes raw bytes, so only plain data is saved: a pointer or
+  // handle written out (Renderable, MaterialRef, std::string...) is garbage
+  // once loaded. Those components are simply not in the save.
+  if constexpr (std::is_trivially_copyable_v<T>) {
+    static bool once =
+        (serialTypes().push_back(
+            {entt::type_hash<T>::value(), &metaSave<T>, &metaLoad<T>}), true);
+    (void)once;
+  }
   entt::meta_factory<T>{}
       .template func<&metaAdd<T>>("add"_hs)
       .template func<&metaRemove<T>>("remove"_hs);
@@ -65,7 +72,10 @@ struct Plugin {
   virtual void start(entt::registry &reg) {}
   virtual void update(entt::registry &reg) {}
   virtual void end(entt::registry &reg) {}
-  virtual void save() {};
-  virtual void load() {};
+  // Run after the component pools, in plugin order, on both sides: a plugin
+  // appends what the raw-byte pools can't hold (shapes, GPU state inputs) and
+  // reads it back, in the same order, after the entities exist again.
+  virtual void save(entt::registry &reg, SaveFile &file) {}
+  virtual void load(entt::registry &reg, SaveFile &file) {}
 };
 } // namespace KR

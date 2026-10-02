@@ -7,6 +7,7 @@
 #include "Jolt/Physics/Body/BodyID.h"
 #include "Jolt/Physics/Body/BodyInterface.h"
 #include "Jolt/Physics/Body/BodyLock.h"
+#include "Jolt/Core/StreamWrapper.h"
 #include "Jolt/Physics/Collision/Shape/CapsuleShape.h"
 #include "Jolt/Physics/Collision/Shape/CylinderShape.h"
 #include "Jolt/Physics/Collision/Shape/ScaledShape.h"
@@ -114,8 +115,55 @@ struct PhysicsPlugin : public Plugin {
   std::unordered_map<entt::entity, BodyWire> wires;
   void init(entt::registry &reg) override {
     auto &s = Core::get()->physicsManager.get()->system;
-    auto &b = Core::get()->physicsManager.get()->bodies();
     s.SetGravity(glmVecToJPH(gravity));
+    reg.on_destroy<JPH::BodyID>().connect<&removeBody>();
+  }
+
+  // A body lives exactly as long as its BodyID: destroying the entity, or
+  // Core::load's reg.clear(), takes it out of Jolt too.
+  static void removeBody(entt::registry &reg, entt::entity e) {
+    auto &bodies = Core::get()->physicsManager.get()->bodies();
+    const JPH::BodyID id = reg.get<JPH::BodyID>(e);
+    bodies.RemoveBody(id);
+    bodies.DestroyBody(id);
+  }
+
+  // Bodies are saved as the settings that would recreate them (shape
+  // included, shared shapes once); load puts those back as
+  // BodyCreationSettings and update() creates the bodies as usual.
+  void save(entt::registry &reg, SaveFile &file) override {
+    auto &lock = Core::get()->physicsManager.get()->system.GetBodyLockInterface();
+    auto view = reg.view<JPH::BodyID>();
+    file(static_cast<uint32_t>(view.size()));
+    JPH::StreamOutWrapper out(file.f);
+    JPH::BodyCreationSettings::ShapeToIDMap shapes;
+    JPH::BodyCreationSettings::MaterialToIDMap materials;
+    JPH::BodyCreationSettings::GroupFilterToIDMap groups;
+    for (auto [e, id] : view.each()) {
+      JPH::BodyLockRead body(lock, id);
+      assert(body.Succeeded());
+      file(e);
+      body.GetBody().GetBodyCreationSettings().SaveWithChildren(
+          out, &shapes, &materials, &groups);
+    }
+  }
+  void load(entt::registry &reg, SaveFile &file) override {
+    uint32_t count = 0;
+    file(count);
+    JPH::StreamInWrapper in(file.f);
+    JPH::BodyCreationSettings::IDToShapeMap shapes;
+    JPH::BodyCreationSettings::IDToMaterialMap materials;
+    JPH::BodyCreationSettings::IDToGroupFilterMap groups;
+    while (count--) {
+      entt::entity e;
+      file(e);
+      auto result = JPH::BodyCreationSettings::sRestoreWithChildren(
+          in, shapes, materials, groups);
+      if (result.HasError())
+        throw std::runtime_error("load: bad body: " +
+                                 std::string(result.GetError()));
+      reg.emplace_or_replace<JPH::BodyCreationSettings>(e, result.Get());
+    }
   }
 
   // Spawning/despawning renderables only here: in update() the frame's

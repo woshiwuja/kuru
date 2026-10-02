@@ -516,7 +516,7 @@ void NavigationPlugin::UI(entt::registry &reg) {
       overlayRequested = true;
     }
     if (SliderFloat("alpha", &config.debugAlpha, 0.0f, 1.0f) &&
-        reg.valid(debugEntity)) {
+        reg.valid(debugEntity) && reg.all_of<MaterialRef>(debugEntity)) {
       reg.get<MaterialRef>(debugEntity).material.get()->alphaCutoff = config.debugAlpha;
     }
     ColorEdit3("color", &config.debugColor.x);
