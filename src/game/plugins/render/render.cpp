@@ -242,7 +242,8 @@ struct MaterialValues {
 
 void RenderPlugin::save(entt::registry &reg, SaveFile &file) {
   auto view = reg.view<Model, MaterialRef>();
-  file(static_cast<uint32_t>(view.size_hint()));
+  // Exact count: a multi-type view's size_hint() is only an upper bound.
+  file(static_cast<uint32_t>(std::distance(view.begin(), view.end())));
   for (auto [e, model, ref] : view.each()) {
     const Material &m = *ref.material;
     file(e);
