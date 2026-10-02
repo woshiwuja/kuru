@@ -101,6 +101,7 @@ inline std::shared_ptr<Mesh> bodyWireMesh(const JPH::Shape &shape,
 }
 
 struct PhysicsPlugin : public Plugin {
+  PhysicsPlugin() { registerComponent<JPH::BodyCreationSettings>(); }
 
   glm::vec3 gravity{0, -9.81f, 0};
 
@@ -115,7 +116,7 @@ struct PhysicsPlugin : public Plugin {
     auto &s = Core::get()->physicsManager.get()->system;
     auto &b = Core::get()->physicsManager.get()->bodies();
     s.SetGravity(glmVecToJPH(gravity));
-    registerComponent<JPH::BodyCreationSettings>();}
+  }
 
   // Spawning/despawning renderables only here: in update() the frame's
   // command buffer already references them (see NavigationPlugin::start).

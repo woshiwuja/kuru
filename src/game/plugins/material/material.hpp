@@ -2,11 +2,12 @@
 #include <Kuru.h>
 using namespace KR;
 struct MaterialRef {
-  std::shared_ptr<Material> material;
+  // The inspector default-constructs this, and every reader derefs it.
+  std::shared_ptr<Material> material = std::make_shared<Material>();
   glm::vec4 params{0.0f};
 };
 struct MaterialPlugin : public Plugin{
-    void init(entt::registry &r ) override {
+    MaterialPlugin() {
         registerComponent<MaterialRef>();
         registerComponent<Material>();
     }

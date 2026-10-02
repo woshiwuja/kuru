@@ -27,7 +27,10 @@ struct SpotLight {
 };
 
 struct LightingPlugin : public Plugin {
+  LightingPlugin();
   void init(entt::registry &reg) override;
   void update(entt::registry &reg) override;
   void UI(entt::registry &reg);
 };
+
+void syncToTransform(entt::registry &reg);

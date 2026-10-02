@@ -35,6 +35,9 @@ namespace KR{
     struct MainCamera {};
 
     struct CameraPlugin : public Plugin {
+	CameraPlugin(){
+		registerComponent<Camera>();
+	}
 	void init(entt::registry &reg) override;
 	void update(entt::registry &reg) override;
 	void UI(entt::registry &reg);

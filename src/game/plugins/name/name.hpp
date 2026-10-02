@@ -10,7 +10,7 @@ struct Name {
   std::string lname = "lname";
 };
 struct NamePlugin : public KR::Plugin {
-  void init(entt::registry &r) override {
+  NamePlugin() {
       registerComponent<Name>();
   }
   void update(entt::registry &r) override {

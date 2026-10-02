@@ -3,6 +3,7 @@
 #include "SDL3/SDL_scancode.h"
 #include "imgui.h"
 #include <Kuru.h>
+#include "../save/save.hpp"
 using namespace KR;
 struct PausingPlugin : public Plugin {
   void init(entt::registry &r) override {}
@@ -14,10 +15,10 @@ struct PausingPlugin : public Plugin {
           paused = !paused;
     }
     if (paused) {
-      pauseMenu(paused);
+      pauseMenu(paused, r.ctx().get<SaveMenu>().mode);
     }
   };
-  void pauseMenu(bool &open) {
+  void pauseMenu(bool &open, SaveMenu::Mode &saveMode) {
     auto flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking;
     ImGui::Begin("PAUSED", &open, flags);
@@ -27,9 +28,11 @@ struct PausingPlugin : public Plugin {
     const float x = (ImGui::GetWindowWidth() - size.x) * 0.5f;
     ImGui::SetCursorPosY((ImGui::GetWindowHeight() - total) * 0.5f);
     ImGui::SetCursorPosX(x);
-    ImGui::Button("Load", size);
+    if (ImGui::Button("Load", size))
+      saveMode = SaveMenu::Load;
     ImGui::SetCursorPosX(x);
-    ImGui::Button("Save", size);
+    if (ImGui::Button("Save", size))
+      saveMode = SaveMenu::Save;
     ImGui::SetCursorPosX(x);
     if (ImGui::Button("Exit", size)) {
       Core::get()->eventManager->quit = true;

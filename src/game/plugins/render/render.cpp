@@ -16,7 +16,6 @@ void RenderPlugin::init(entt::registry &reg) {
   createDescriptorSetLayout();
   createGraphicsPipeline();
   createDescriptorPool();
-  registerComponent<Renderable>();
 }
 
 void RenderPlugin::createDescriptorSetLayout() {

@@ -79,6 +79,8 @@ struct Core {
   void drawFrame();
   [[nodiscard]] std::vector<const char *> getRequiredInstanceExtensions() const;
   [[nodiscard]] bool checkValidationLayerSupport() const;
+  void save(const char* path);
+  void load(const char* path);
   private:
   float dt = 0.0f;
 };

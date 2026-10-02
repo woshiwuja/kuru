@@ -431,4 +431,19 @@ bool Core::checkValidationLayerSupport() const {
                                                lp.layerName) == 0);
                               }));
 }
+void Core::save(const char* path){
+  	SaveFile savefile{path, true};
+		Saver s{reg};
+		s.get<entt::entity>(savefile);
+		for (auto &e : serialTypes()) e.save(s, savefile);
+};
+void Core::load(const char *path) {
+  reg.clear(); // the file is the truth
+  SaveFile savefile{path, false};
+  Loader l{reg};
+  l.get<entt::entity>(savefile);
+  for (auto &e : serialTypes())
+    e.load(l, savefile);
+  l.orphans();
+}
 } // namespace KR

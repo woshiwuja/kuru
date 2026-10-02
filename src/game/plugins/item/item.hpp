@@ -17,7 +17,7 @@ struct Misc{};
 struct Food{};
 
 struct ItemPlugin : public KR::Plugin {
-    void init(entt::registry &r) override {
+    ItemPlugin() {
         KR::registerComponent<Item>();
     }
 };

@@ -12,7 +12,10 @@ using namespace KR;
 struct Character {};
 
 struct CharacterPlugin : public Plugin {
-  void init(entt::registry &r) override { registerComponent<Character>(); }
+  CharacterPlugin(){
+    registerComponent<Character>();
+  }
+  void init(entt::registry &r) override {}
   void update(entt::registry &r) override;
   void UI(entt::registry &r);
   static entt::entity newCharacter(entt::registry &r);

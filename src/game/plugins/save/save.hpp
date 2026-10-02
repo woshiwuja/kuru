@@ -1,27 +1,60 @@
 #pragma once
+#include "imgui.h"
 #include <Kuru.h>
+#include <filesystem>
+#include <string>
 using namespace KR;
 
-struct SaveFile{
-    std::istream &is;
-    template<typename t>
-    void operator()(t &value) {
-        static_assert(std::is_trivially_copyable_v<t>);
-        is.read(reinterpret_cast<char *>(&value), sizeof(t));
-    }
-
-    template<typename t>
-    void operator()(entt::entity &e, t &c) { (*this)(e); (*this)(c); }
+// Which list the save window shows. PausingPlugin's buttons set it.
+struct SaveMenu {
+  enum Mode { Closed, Save, Load } mode = Closed;
 };
 
-struct saveplugin : public Plugin {
-    SaveFile savefile;
-    void load(entt::snapshot s);
+struct SavePlugin : public Plugin {
+  char name[64] = "";
 
-    template<typename t>
-    void save(entt::registry &r){
-        for(auto [e, component]:r.view<t>().each()){
-            entt::snapshot{r}.get<entt::entity>(savefile).get<t>(savefile);
-        }
+  void init(entt::registry &r) override { r.ctx().emplace<SaveMenu>(); }
+
+  void update(entt::registry &r) override {
+    auto &mode = r.ctx().get<SaveMenu>().mode;
+    if (!Core::get()->paused)
+      mode = SaveMenu::Closed;
+    if (mode == SaveMenu::Closed)
+      return;
+
+    namespace fs = std::filesystem;
+    // Next to the exe, like every other asset: a CWD-relative dir moves with
+    // wherever the game was launched from.
+    const fs::path dir = assetPath("saves");
+    fs::create_directories(dir);
+
+    bool open = true;
+    ImGui::Begin(mode == SaveMenu::Save ? "Save game" : "Load game", &open,
+                 ImGuiWindowFlags_AlwaysAutoResize);
+    if (mode == SaveMenu::Save) {
+      ImGui::InputText("name", name, sizeof(name));
+      ImGui::BeginDisabled(name[0] == '\0');
+      if (ImGui::Button("Save")) {
+        Core::get()->save((dir / name).string().c_str());
+        open = false;
+      }
+      ImGui::EndDisabled();
+      ImGui::Separator();
     }
+    for (const auto &entry : fs::directory_iterator(dir)) {
+      const std::string file = entry.path().filename().string();
+      if (!ImGui::Selectable(file.c_str()))
+        continue;
+      if (mode == SaveMenu::Save) {
+        // Clicking an existing save picks its name, to overwrite it.
+        snprintf(name, sizeof(name), "%s", file.c_str());
+      } else {
+        Core::get()->load(entry.path().string().c_str());
+        open = false;
+      }
+    }
+    ImGui::End();
+    if (!open)
+      mode = SaveMenu::Closed;
+  }
 };

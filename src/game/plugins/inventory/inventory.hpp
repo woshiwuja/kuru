@@ -9,7 +9,7 @@ struct Inventory {
   uint32_t height = 50;
 };
 struct InventoryPlugin : public KR::Plugin {
-    void init(entt::registry &r) override {
+    InventoryPlugin() {
         registerComponent<Inventory>();
     }
   void update(entt::registry &r) override {

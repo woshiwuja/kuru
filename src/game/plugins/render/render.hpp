@@ -67,6 +67,7 @@ struct PropBatch {
 };
 
 struct RenderPlugin : Plugin {
+	RenderPlugin() { registerComponent<Renderable>(); }
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;

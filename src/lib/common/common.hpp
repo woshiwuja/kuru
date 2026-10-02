@@ -1,5 +1,6 @@
 #pragma once
 #include "vertex.hpp"
+#include <fstream>
 #include <string>
 #include <vulkan/vulkan_raii.hpp>
 #include <Jolt/Jolt.h>
@@ -64,4 +65,23 @@ inline const char* cdemangle(const char* mangled) {
 #endif
 
 struct Selected {};
+
+struct SaveFile {
+  std::fstream f;
+  bool saving;
+
+  SaveFile(const char *path, bool s)
+      : f(path, (s ? std::ios::out : std::ios::in) | std::ios::binary),
+        saving(s) {
+    assert(f.good());
+  }
+
+  template <typename T> void operator()(T &&v) {
+    using U = std::remove_cvref_t<T>;
+    if (saving)
+      f.write(reinterpret_cast<const char *>(&v), sizeof(U));
+    else if constexpr (!std::is_const_v<std::remove_reference_t<T>>)
+      f.read(reinterpret_cast<char *>(&v), sizeof(U));
+  }
+};
 } // namespace KR

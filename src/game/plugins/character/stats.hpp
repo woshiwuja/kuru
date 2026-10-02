@@ -48,8 +48,10 @@ struct CharacterStats {
 };
 
 struct StatPlugin : public Plugin{
-   void init(entt::registry &r) override {
+    StatPlugin(){
        registerComponent<CharacterStats>();
+    }
+   void init(entt::registry &r) override {
    }
    void update(entt::registry &r) override {
        using namespace ImGui;
