@@ -21,6 +21,11 @@ struct Mesh {
   uint32_t indexCount = 0;
   float minY = 0.0f;
   float maxY = 0.0f;
+  // Model-space bounds, set by upload(): sphere for culling, box for picking.
+  glm::vec3 boundsCenter{0.0f};
+  float boundsRadius = 0.0f;
+  glm::vec3 boundsMin{0.0f};
+  glm::vec3 boundsMax{0.0f};
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
   std::vector<SubMesh> submeshes;
