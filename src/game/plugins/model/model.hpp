@@ -14,58 +14,101 @@ struct ModelPath {
 
 struct ModelPlugin : public Plugin {
   ModelPlugin() { registerComponent<ModelPath>(); }
-
-  // Mesh swaps go here, not in update(): this frame's commands don't
-  // reference the old mesh yet, and the renderer's `retired` list covers the
-  // frames in flight. Runs after RenderPlugin::start (registration order).
   void start(entt::registry &r) override {
     auto &render = renderer(r);
-    auto requests = r.view<MeshRef, ModelPath>();
-    const std::vector<entt::entity> swaps(requests.begin(), requests.end());
-    for (entt::entity e : swaps) {
+    for (entt::entity e : collect(r.view<ModelPath>(entt::exclude<MeshRef>))) {
       const std::string path = r.get<ModelPath>(e).path;
+      if (path.empty())
+        continue;
+      r.emplace<MeshRef>(e, loadModel(path));
+      recordPath(r, e, path);
+      r.remove<ModelPath>(e);
+    }
+
+    // ModelPath on an existing mesh: swap it.
+    for (entt::entity e : collect(r.view<MeshRef, ModelPath>())) {
+      const std::string path = r.get<ModelPath>(e).path;
+      if (path.empty())
+        continue;
       auto &meshRef = r.get<MeshRef>(e);
       RenderPlugin::Retired old{.frame = render.frameCount};
       old.mesh = std::exchange(meshRef.mesh, loadModel(path));
       if (r.all_of<Prop>(e)) {
-        // Props draw through a batch per mesh, so the new mesh needs one.
-        auto texture =
-            render.propBatches.at(old.mesh.get()).material->baseColor;
-        auto [it, fresh] = render.propBatches.try_emplace(meshRef.mesh.get());
-        if (fresh) {
-          it->second.mesh = meshRef.mesh;
-          it->second.material =
-              std::make_shared<Material>(Material{.baseColor = texture});
-          it->second.renderable = render.makeRenderable(*meshRef.mesh, texture);
-        }
-      } else if (auto *material = r.try_get<MaterialRef>(e)) {
-        // Descriptor sets are per submesh: the new mesh needs its own.
-        if (auto *old_r = r.try_get<Renderable>(e))
-          old.renderable = std::move(*old_r);
-        r.emplace_or_replace<Renderable>(
-            e, render.makeRenderable(*meshRef.mesh,
-                                     material->material->baseColor));
+        // Props draw through a batch per mesh; the prop pass below makes the
+        // new mesh's.
+      } else if (auto *old_r = r.try_get<Renderable>(e)) {
+        // Descriptor sets are per submesh: the new mesh needs its own. The
+        // drawable pass below rebuilds it.
+        old.renderable = std::move(*old_r);
+        r.remove<Renderable>(e);
       }
-      // Keep saves pointing at the new file.
-      if (auto *model = r.try_get<Model>(e)) {
-        assert(path.size() < sizeof(model->mesh));
-        snprintf(model->mesh, sizeof(model->mesh), "%s", path.c_str());
-      }
+      recordPath(r, e, path);
       render.retired.push_back(std::move(old));
       r.remove<ModelPath>(e);
     }
+
+    // Props draw instanced through a batch per mesh: make sure theirs exists
+    // (an inspector-added Prop, a swap above), and drop the entity's own
+    // Renderable so it isn't drawn twice.
+    for (entt::entity e : collect(r.view<Prop, MeshRef>())) {
+      const auto &mesh = r.get<MeshRef>(e).mesh;
+      if (!render.propBatches.contains(mesh.get())) {
+        std::shared_ptr<Texture> texture = getTexture(r, "");
+        const auto *ref = r.try_get<MaterialRef>(e);
+        if (ref && ref->material->baseColor) {
+          texture = ref->material->baseColor;
+        }
+        render.propBatch(mesh, texture);
+      }
+      r.get_or_emplace<Transform>(e);
+      if (auto *own = r.try_get<Renderable>(e)) {
+        RenderPlugin::Retired old{.frame = render.frameCount};
+        old.renderable = std::move(*own);
+        render.retired.push_back(std::move(old));
+        r.remove<Renderable>(e);
+      }
+    }
+
+    // A mesh nothing draws yet (inspector-added MeshRef, a load above, a
+    // swap, a removed Prop): give it what drawMeshes needs.
+    for (entt::entity e :
+         collect(r.view<MeshRef>(entt::exclude<Renderable, Prop>))) {
+      r.get_or_emplace<Transform>(e);
+      auto &material = r.get_or_emplace<MaterialRef>(e).material;
+      // An inspector-added MaterialRef has no texture, and makeRenderable
+      // binds one per submesh.
+      if (!material->baseColor)
+        material->baseColor = getTexture(r, "");
+      r.emplace<Renderable>(e, render.makeRenderable(*r.get<MeshRef>(e).mesh,
+                                                     material->baseColor));
+    }
+  }
+
+  template <typename View> static std::vector<entt::entity> collect(View view) {
+    return {view.begin(), view.end()};
+  }
+
+  static void recordPath(entt::registry &r, entt::entity e,
+                         const std::string &path) {
+    auto &model = r.get_or_emplace<Model>(e);
+    assert(path.size() < sizeof(model.mesh));
+    snprintf(model.mesh, sizeof(model.mesh), "%s", path.c_str());
   }
 
   void update(entt::registry &r) override { UI(r); }
 
-  // Swap the selected entity's mesh: picking a file queues a ModelPath,
-  // which start() applies next frame.
   void UI(entt::registry &r) {
-    if (ImGui::Begin("Model")) {
-      for (auto [e, meshRef] : r.view<Selected, MeshRef>().each()) {
+    ImGui::Begin("Model");
+      for (entt::entity e : r.view<Selected>()) {
         ImGui::PushID(static_cast<int>(entt::to_integral(e)));
         const auto *model = r.try_get<Model>(e);
-        if (ImGui::BeginCombo("mesh", model ? model->mesh : "(in-memory)")) {
+        const char *current = "(none)";
+        if (model && model->mesh[0]) {
+          current = model->mesh;
+        } else if (r.all_of<MeshRef>(e)) {
+          current = "(in-memory)";
+        }
+        if (ImGui::BeginCombo("mesh", current)) {
           namespace fs = std::filesystem;
           for (const auto &entry : fs::directory_iterator(assetPath("models"))) {
             if (entry.path().extension() != ".glb")
@@ -79,7 +122,6 @@ struct ModelPlugin : public Plugin {
         }
         ImGui::PopID();
       }
-    }
     ImGui::End();
   }
 };

@@ -361,6 +361,16 @@ void RenderPlugin::spawnProp(entt::registry &reg, entt::entity entity,
                              std::shared_ptr<Texture> texture,
                              Transform transform) {
   assert(mesh && texture);
+  propBatch(mesh, texture);
+  if (!reg.all_of<Transform>(entity)) {
+    reg.emplace<Transform>(entity, transform);
+  }
+  reg.emplace<MeshRef>(entity, std::move(mesh));
+  reg.emplace_or_replace<Prop>(entity); // already there on a loaded prop
+}
+
+PropBatch &RenderPlugin::propBatch(const std::shared_ptr<Mesh> &mesh,
+                                   const std::shared_ptr<Texture> &texture) {
   auto [it, fresh] = propBatches.try_emplace(mesh.get());
   if (fresh) {
     it->second.mesh = mesh;
@@ -368,11 +378,7 @@ void RenderPlugin::spawnProp(entt::registry &reg, entt::entity entity,
         std::make_shared<Material>(Material{.baseColor = texture});
     it->second.renderable = makeRenderable(*mesh, texture);
   }
-  if (!reg.all_of<Transform>(entity)) {
-    reg.emplace<Transform>(entity, transform);
-  }
-  reg.emplace<MeshRef>(entity, std::move(mesh));
-  reg.emplace_or_replace<Prop>(entity); // already there on a loaded prop
+  return it->second;
 }
 
 // Requires MeshRef to already be on `entity` - RenderPlugin::spawn emplaces
@@ -639,8 +645,10 @@ bool RenderPlugin::shadowMatrix(entt::registry &reg, glm::vec3 center,
   // rays travel along -l.
   const glm::vec3 l = glm::normalize(
       glm::vec3(lights.get<DirectionalLight>(*lights.begin()).direction));
-  const glm::vec3 up =
-      std::abs(l.y) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+  glm::vec3 up(0, 1, 0);
+  if (std::abs(l.y) > 0.99f) {
+    up = glm::vec3(1, 0, 0); // light straight up/down: Y can't be "up"
+  }
   const glm::mat4 view = glm::lookAt(glm::vec3(0.0f), -l, up);
 
   // Snap the box to whole texels in light space, or every camera step
@@ -669,8 +677,10 @@ void RenderPlugin::updateShadowMatrices(entt::registry &reg) {
     return;
   constexpr float nearPlane = 0.05f;
   const auto lookFrom = [](glm::vec3 pos, glm::vec3 dir) {
-    const glm::vec3 up =
-        std::abs(dir.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+    glm::vec3 up(0, 1, 0);
+    if (std::abs(dir.y) > 0.99f) {
+      up = glm::vec3(0, 0, 1); // looking straight up/down: Y can't be "up"
+    }
     return glm::lookAt(pos, pos + dir, up);
   };
   for (auto [e, light] : reg.view<SpotLight>().each()) {
@@ -778,7 +788,11 @@ void RenderPlugin::drawShadowPass(entt::registry &reg) {
   }
 
   // Pass order = segment order: sun, spots, point faces.
-  std::vector<const glm::mat4 *> passes{sunShadowValid ? &sunViewProj : nullptr};
+  // nullptr = sun off: cleared, nothing drawn.
+  std::vector<const glm::mat4 *> passes{nullptr};
+  if (sunShadowValid) {
+    passes[0] = &sunViewProj;
+  }
   for (uint32_t i = 0; i < spotShadowCount; i++)
     passes.push_back(&spotViewProj[i]);
   for (uint32_t i = 0; i < pointShadowCount * 6; i++)
@@ -913,8 +927,10 @@ void RenderPlugin::fillMainInstances(entt::registry &reg) {
   for (auto [e, meshRef, t] : reg.view<Prop, MeshRef, Transform>().each()) {
     const glm::mat4 model = t.matrix();
     const auto [center, radius] = worldBounds(*meshRef.mesh, model, t.scale);
-    if (camera.visible(center, radius))
-      propBatches.at(meshRef.mesh.get()).staging.push_back(model);
+    // No batch yet: Prop was added this frame, ModelPlugin::start makes one.
+    const auto batch = propBatches.find(meshRef.mesh.get());
+    if (batch != propBatches.end() && camera.visible(center, radius))
+      batch->second.staging.push_back(model);
   }
   for (auto &[key, batch] : propBatches) {
     batch.count = static_cast<uint32_t>(batch.staging.size());
@@ -936,10 +952,12 @@ void RenderPlugin::fillShadowInstances(
   };
   std::vector<Instance> props;
   for (auto [e, meshRef, t] : reg.view<Prop, MeshRef, Transform>().each()) {
+    const auto batch = propBatches.find(meshRef.mesh.get());
+    if (batch == propBatches.end())
+      continue; // see fillMainInstances
     const glm::mat4 model = t.matrix();
     const auto [center, radius] = worldBounds(*meshRef.mesh, model, t.scale);
-    props.push_back(
-        {&propBatches.at(meshRef.mesh.get()), model, center, radius});
+    props.push_back({&batch->second, model, center, radius});
   }
   for (auto &[key, batch] : propBatches) {
     batch.staging.clear();

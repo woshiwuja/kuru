@@ -29,7 +29,11 @@ struct SavePlugin : public Plugin {
     fs::create_directories(dir);
 
     bool open = true;
-    ImGui::Begin(mode == SaveMenu::Save ? "Save game" : "Load game", &open,
+    const char *title = "Load game";
+    if (mode == SaveMenu::Save) {
+      title = "Save game";
+    }
+    ImGui::Begin(title, &open,
                  ImGuiWindowFlags_AlwaysAutoResize);
     if (mode == SaveMenu::Save) {
       ImGui::InputText("name", name, sizeof(name));

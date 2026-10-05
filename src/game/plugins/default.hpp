@@ -41,7 +41,7 @@ struct DefaultPlugin : public Plugin {
       for (int z = 0; z < 14; z++) {
         auto prop = reg.create();
         spawnProp(reg, prop, "models/default_item.glb", "",
-                  Transform{.position = {x * 3.0, 100, z * 3.0},.scale= {1.0,1.0,1.0}});
+                  Transform{.position = {x * 3.0, 100, z * 3.0},.scale= {.1,.1,.1}});
         reg.emplace<Pickable>(prop);
       }
     }

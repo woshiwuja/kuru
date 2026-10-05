@@ -158,10 +158,13 @@ float pointShadow(float3 worldPos, uint i) {
     if (float(i) >= ubo.localShadow.y) { return 1.0; }
     float3 d = worldPos - ubo.pointLights[i].position.xyz;
     float3 a = abs(d);
+    // Even index = the positive direction of the axis, odd = negative.
     uint face;
-    if (a.x >= a.y && a.x >= a.z) { face = d.x > 0.0 ? 0 : 1; }
-    else if (a.y >= a.z)          { face = d.y > 0.0 ? 2 : 3; }
-    else                          { face = d.z > 0.0 ? 4 : 5; }
+    float along;
+    if (a.x >= a.y && a.x >= a.z) { face = 0; along = d.x; }
+    else if (a.y >= a.z)          { face = 2; along = d.y; }
+    else                          { face = 4; along = d.z; }
+    if (along <= 0.0) { face += 1; }
     return localShadow(worldPos, ubo.pointViewProj[i * 6 + face],
                        MAX_LIGHTS + i * 6 + face);
 }
@@ -347,7 +350,8 @@ float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : S
     for (uint i = 0; i < ubo.counts.x; i++) {
         float3 l = normalize(ubo.dirLights[i].direction.xyz);
         // Only the first directional light has a shadow map.
-        float shadow = i == 0 ? sunShadow(worldPos) : 1.0;
+        float shadow = 1.0;
+        if (i == 0) { shadow = sunShadow(worldPos); }
         lit += shadow * ubo.dirLights[i].color.rgb *
                brdf(n, v, l, albedo, metallic, roughness, eAvg);
     }

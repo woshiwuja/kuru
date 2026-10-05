@@ -11,7 +11,7 @@
 using namespace KR;
 
 struct MeshRef {
-	std::shared_ptr<Mesh> mesh;
+	std::shared_ptr<Mesh> mesh = createCube();
 };
 
 struct UniformBufferObject
@@ -240,6 +240,10 @@ struct RenderPlugin : Plugin {
 	               std::shared_ptr<Mesh> mesh, std::shared_ptr<Texture> texture,
 	               Transform transform = {});
 	void despawn(entt::registry &reg, entt::entity entity);
+	// The instanced batch props with `mesh` draw through, created on first use
+	// (`texture` is only read then).
+	PropBatch &propBatch(const std::shared_ptr<Mesh> &mesh,
+	                     const std::shared_ptr<Texture> &texture);
 
 	[[nodiscard]] Renderable makeRenderable(const Mesh &mesh,
 	                                        const std::shared_ptr<Texture> &texture);
