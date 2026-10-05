@@ -138,6 +138,18 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
                                         std::clamp(factor[3], 0.0, 1.0) * 255.0))};
     return loadTextureFromPixels(pixel, 1, 1);
   };
+  // Indices are grouped by material and become one submesh (one texture, one
+  // descriptor set per frame) each. Per primitive would be per node instance
+  // too, since nodes reuse meshes: thousands of texture uploads and sets.
+  // Slot 0 is "no/invalid material", slot i + 1 is material i.
+  const auto materialSlot = [&](int materialIndex) -> size_t {
+    if (materialIndex >= 0 &&
+        materialIndex < static_cast<int>(model.materials.size())) {
+      return static_cast<size_t>(materialIndex) + 1;
+    }
+    return 0;
+  };
+  std::vector<std::vector<uint32_t>> slotIndices(model.materials.size() + 1);
 
   std::vector<std::pair<int, glm::mat4>> instances;
   const auto visit = [&](auto &&self, int nodeIndex,
@@ -245,7 +257,7 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
         vertices.push_back(vertex);
       }
 
-      const uint32_t indexOffset = static_cast<uint32_t>(indices.size());
+      std::vector<uint32_t> &slotIdx = slotIndices[materialSlot(primitive.material)];
       const unsigned char *indexData =
           &indexBuffer
                .data[indexBufferView.byteOffset + indexAccessor.byteOffset];
@@ -266,7 +278,7 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
         throw std::runtime_error("Unsupported index component type");
       }
 
-      indices.reserve(indices.size() + indexCount);
+      slotIdx.reserve(slotIdx.size() + indexCount);
 
       for (size_t i = 0; i < indexCount; i++) {
         uint32_t index = 0;
@@ -285,12 +297,21 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
               *reinterpret_cast<const uint8_t *>(indexData + i * indexStride);
         }
 
-        indices.push_back(baseVertex + index);
+        slotIdx.push_back(baseVertex + index);
       }
-
-      submeshes.push_back(SubMesh{indexOffset, static_cast<uint32_t>(indexCount),
-                                  loadMaterialTexture(primitive.material)});
     }
+  }
+
+  for (size_t slot = 0; slot < slotIndices.size(); slot++) {
+    if (slotIndices[slot].empty()) {
+      continue;
+    }
+    const uint32_t indexOffset = static_cast<uint32_t>(indices.size());
+    indices.insert(indices.end(), slotIndices[slot].begin(),
+                   slotIndices[slot].end());
+    submeshes.push_back(SubMesh{indexOffset,
+                                static_cast<uint32_t>(slotIndices[slot].size()),
+                                loadMaterialTexture(static_cast<int>(slot) - 1)});
   }
 
   auto mesh = std::make_shared<Mesh>();

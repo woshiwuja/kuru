@@ -17,10 +17,10 @@ struct SerialEntry {
   void (*save)(Saver &, SaveFile &);
   void (*load)(Loader &, SaveFile &);
 };
-inline std::vector<SerialEntry> &serialTypes() {
-  static std::vector<SerialEntry> v;
-  return v;
-}
+// Defined in plugin.cpp, not inline: on Windows an inline function's static
+// is one copy per module, so the exe (which registers) and Kuru.dll (which
+// saves/loads) would each see their own list.
+std::vector<SerialEntry> &serialTypes();
 
 template <typename T> void metaSave(Saver &s, SaveFile &savefile) {
   s.template get<T>(savefile);

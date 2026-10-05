@@ -35,13 +35,8 @@ struct DefaultPlugin : public Plugin {
         JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     spawn(reg, e, "models/spongebob.glb", "");
-    for (int x = 0; x < 14; x++) {
-      for (int z = 0; z < 14; z++) {
         spawnProp(reg, reg.create(), "models/default_item.glb", "",
-                  Transform{.position = {x * 3.0, 100, z * 3.0},.scale= {1.0,1.0,1.0}});
-      }
-    }
-
+                  Transform{.position = {3.0, 100, 3.0},.scale= {1.0,1.0,1.0}});
   };
   void update(entt::registry &reg) override {}
 };
