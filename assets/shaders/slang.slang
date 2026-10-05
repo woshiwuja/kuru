@@ -120,6 +120,14 @@ float4 shadowVert(float3 position, float3 color, float2 uv, float3 normal) : SV_
     return mul(shadowPush.viewProj, mul(ubo.model, float4(position, 1.0)));
 }
 
+// Props in the shadow pass: the instance matrix, as in vertMainInstanced.
+[shader("vertex")]
+float4 shadowVertInstanced(float3 position, float3 color, float2 uv, float3 normal,
+                           float4 c0, float4 c1, float4 c2, float4 c3) : SV_Position {
+    float4 world = mul(float4(position, 1.0), float4x4(c0, c1, c2, c3));
+    return mul(shadowPush.viewProj, world);
+}
+
 // Same 3x3 compare as sunShadow, against one layer of the local array.
 // Outside the layer's frustum counts as lit.
 float localShadow(float3 worldPos, float4x4 viewProj, uint layer) {

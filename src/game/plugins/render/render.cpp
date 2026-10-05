@@ -239,6 +239,7 @@ void RenderPlugin::start(entt::registry &reg) {
 void RenderPlugin::update(entt::registry &reg) {
   auto *core = Core::get();
   updateUniforms(reg);
+  fillMainInstances(reg);
   drawMeshes(reg);
   ImGui::ShowDemoWindow();
   // Last 120 frames, oldest at `head`. ImGui's delta, not Core's: that one
@@ -256,7 +257,12 @@ void RenderPlugin::update(entt::registry &reg) {
                          "frame time (ms)", 0.0f, FLT_MAX, size);
     ImGui::PlotLines("##fps", fps.data(), fps.size(), head, "fps", 0.0f,
                      FLT_MAX, size);
-    ImGui::Text("drawables: %zu", reg.view<MeshRef>().size());
+    uint32_t propsDrawn = 0;
+    for (const auto &[key, batch] : propBatches)
+      propsDrawn += batch.count; // camera-visible, from fillMainInstances
+    ImGui::Text("drawables: %zu (%u drawn: %u entities + %u props)",
+                reg.view<MeshRef>().size(), mainDraws + propsDrawn, mainDraws,
+                propsDrawn);
     ImGui::Text("swapchain: %ux%u", core->graphics->swapChainExtent.width,
                 core->graphics->swapChainExtent.height);
   }
@@ -281,6 +287,8 @@ void RenderPlugin::update(entt::registry &reg) {
                      0.01f, "%.5f");
     ImGui::Text("shadowed: %u spot, %u point (%u passes)", spotShadowCount,
                 pointShadowCount, 1 + spotShadowCount + 6 * pointShadowCount);
+    ImGui::Text("shadow draws: %u (%zu casters, culled per pass)",
+                shadowDraws, shadowCasters.size());
   }
   ImGui::End();
 
@@ -599,6 +607,26 @@ void RenderPlugin::createShadowResources() {
                 .depthAttachmentFormat = shadowFormat}};
   shadowPipeline = vk::raii::Pipeline(
       core->device->device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+
+  // Props: the same, plus the per-instance matrix at binding 1 (as in
+  // createGraphicsPipeline's propPipeline).
+  std::array propBindings{
+      bindingDescription,
+      vk::VertexInputBindingDescription(1, sizeof(glm::mat4),
+                                        vk::VertexInputRate::eInstance)};
+  std::vector<vk::VertexInputAttributeDescription> propAttributes(
+      attributeDescriptions.begin(), attributeDescriptions.end());
+  for (uint32_t c = 0; c < 4; c++) {
+    propAttributes.emplace_back(4 + c, 1, vk::Format::eR32G32B32A32Sfloat,
+                                c * sizeof(glm::vec4));
+  }
+  vertexInputInfo.vertexBindingDescriptionCount = propBindings.size();
+  vertexInputInfo.pVertexBindingDescriptions = propBindings.data();
+  vertexInputInfo.vertexAttributeDescriptionCount = propAttributes.size();
+  vertexInputInfo.pVertexAttributeDescriptions = propAttributes.data();
+  stage.pName = "shadowVertInstanced";
+  shadowPropPipeline = vk::raii::Pipeline(
+      core->device->device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
 bool RenderPlugin::shadowMatrix(entt::registry &reg, glm::vec3 center,
@@ -678,7 +706,8 @@ void RenderPlugin::updateShadowMatrices(entt::registry &reg) {
 
 // One depth-only render of every mesh into `view` (cleared to 1 = lit).
 void RenderPlugin::shadowLayerPass(entt::registry &reg, vk::ImageView view,
-                                   uint32_t size, const glm::mat4 *viewProj) {
+                                   uint32_t size, const glm::mat4 *viewProj,
+                                   uint32_t pass) {
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
   const vk::Extent2D extent{size, size};
@@ -703,15 +732,30 @@ void RenderPlugin::shadowLayerPass(entt::registry &reg, vk::ImageView view,
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *shadowPipeline);
   commandBuffer.pushConstants<glm::mat4>(
       *pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, *viewProj);
-  // ponytail: props aren't drawn here, so they receive shadows but don't
-  // cast them. Casting needs an instanced variant of shadowVert reading
-  // their instance buffers, which are only (re)filled in update().
-  // ponytail: every mesh goes into every layer; cull by light radius/cone if
-  // many point lights make this the bottleneck (each one is 6 full passes).
-  for (auto [entity, meshRef, renderable] :
-       reg.view<MeshRef, Renderable>(entt::exclude<DebugMesh>).each()) {
+
+  // A caster whose bounding sphere is outside this view can't put anything
+  // in this layer.
+  const Frustum frustum(*viewProj);
+  for (const ShadowCaster &c : shadowCasters) {
+    if (!frustum.visible(c.center, c.radius))
+      continue;
+    drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex, *c.mesh,
+                   *c.renderable);
+    shadowDraws++;
+  }
+
+  // Props: this pass's run of already-culled instances (fillShadowInstances).
+  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                             *shadowPropPipeline);
+  for (auto &[key, batch] : propBatches) {
+    const auto [first, count] = batch.shadowSegments[pass];
+    if (count == 0)
+      continue;
+    commandBuffer.bindVertexBuffers(
+        1, *batch.shadowInstances[frame.frameIndex].buffer, {0});
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
-                   *meshRef.mesh, renderable);
+                   *batch.mesh, batch.renderable, count, first);
+    shadowDraws++;
   }
   commandBuffer.endRendering();
 }
@@ -722,6 +766,24 @@ void RenderPlugin::drawShadowPass(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
   updateShadowMatrices(reg);
+
+  shadowDraws = 0;
+  shadowCasters.clear();
+  for (auto [e, meshRef, renderable, t] :
+       reg.view<MeshRef, Renderable, Transform>(entt::exclude<DebugMesh>)
+           .each()) {
+    const auto [center, radius] =
+        worldBounds(*meshRef.mesh, t.matrix(), t.scale);
+    shadowCasters.push_back({meshRef.mesh.get(), &renderable, center, radius});
+  }
+
+  // Pass order = segment order: sun, spots, point faces.
+  std::vector<const glm::mat4 *> passes{sunShadowValid ? &sunViewProj : nullptr};
+  for (uint32_t i = 0; i < spotShadowCount; i++)
+    passes.push_back(&spotViewProj[i]);
+  for (uint32_t i = 0; i < pointShadowCount * 6; i++)
+    passes.push_back(&pointViewProj[i]);
+  fillShadowInstances(reg, passes);
 
   // srcStage covers the previous frame's fragment reads of the same images
   // (barriers order against everything submitted earlier on the queue).
@@ -736,15 +798,15 @@ void RenderPlugin::drawShadowPass(entt::registry &reg) {
   }
 
   // Cleared even when off; the shader skips it via ubo.shadow.x.
-  shadowLayerPass(reg, *shadowView, shadowSize,
-                  sunShadowValid ? &sunViewProj : nullptr);
+  shadowLayerPass(reg, *shadowView, shadowSize, passes[0], 0);
   for (uint32_t i = 0; i < spotShadowCount; i++) {
     shadowLayerPass(reg, *localShadowLayerViews[i], localShadowSize,
-                    &spotViewProj[i]);
+                    passes[1 + i], 1 + i);
   }
   for (uint32_t i = 0; i < pointShadowCount * 6; i++) {
     shadowLayerPass(reg, *localShadowLayerViews[MAX_LIGHTS + i],
-                    localShadowSize, &pointViewProj[i]);
+                    localShadowSize, passes[1 + spotShadowCount + i],
+                    1 + spotShadowCount + i);
   }
 
   for (vk::Image image : {*shadowImage, *localShadowImage}) {
@@ -815,36 +877,89 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
     upload(*material.material, material.params, transform.matrix(), renderable);
   }
 
-  // Props: count per mesh, grow this frame's instance buffer if needed, then
-  // write the matrices. Replacing the buffer is safe here: drawFrame has
-  // already waited on this slot's fence, so nothing in flight still uses it.
-  auto props = reg.view<Prop, MeshRef, Transform>();
+  // Props share one UBO per batch; their matrices are in the instance
+  // buffers fillPropInstances wrote in start().
   for (auto &[key, batch] : propBatches) {
-    batch.count = 0;
-  }
-  for (auto [entity, meshRef, transform] : props.each()) {
-    propBatches.at(meshRef.mesh.get()).count++;
-  }
-  for (auto &[key, batch] : propBatches) {
-    auto &inst = batch.instances[frame.frameIndex];
-    if (batch.count > inst.capacity) {
-      inst.capacity = std::max({batch.count, inst.capacity * 2, 16u});
-      const vk::DeviceSize size = inst.capacity * sizeof(glm::mat4);
-      inst.buffer = nullptr; // release before reallocating
-      inst.memory = nullptr;
-      createBuffer(size, vk::BufferUsageFlagBits::eVertexBuffer,
-                   vk::MemoryPropertyFlagBits::eHostVisible |
-                       vk::MemoryPropertyFlagBits::eHostCoherent,
-                   inst.buffer, inst.memory);
-      inst.mapped = static_cast<glm::mat4 *>(inst.memory.mapMemory(0, size));
-    }
     upload(*batch.material, {}, glm::mat4{1.0f}, batch.renderable);
-    batch.count = 0; // reused as the write cursor below
   }
-  for (auto [entity, meshRef, transform] : props.each()) {
-    auto &batch = propBatches.at(meshRef.mesh.get());
-    batch.instances[frame.frameIndex].mapped[batch.count++] = transform.matrix();
+}
+
+// Grow-only, and replacing is safe: drawFrame has already waited on this
+// slot's fence, so nothing in flight still reads it.
+static void uploadInstances(PropBatch::InstanceBuffer &inst,
+                            const std::vector<glm::mat4> &matrices) {
+  const auto n = static_cast<uint32_t>(matrices.size());
+  if (n > inst.capacity) {
+    inst.capacity = std::max({n, inst.capacity * 2, 16u});
+    const vk::DeviceSize size = inst.capacity * sizeof(glm::mat4);
+    inst.buffer = nullptr; // release before reallocating
+    inst.memory = nullptr;
+    createBuffer(size, vk::BufferUsageFlagBits::eVertexBuffer,
+                 vk::MemoryPropertyFlagBits::eHostVisible |
+                     vk::MemoryPropertyFlagBits::eHostCoherent,
+                 inst.buffer, inst.memory);
+    inst.mapped = static_cast<glm::mat4 *>(inst.memory.mapMemory(0, size));
   }
+  std::copy(matrices.begin(), matrices.end(), inst.mapped);
+}
+
+// The props the camera sees, per batch. In update(), after physics and the
+// camera have moved this frame, and nothing recorded yet reads `instances`.
+void RenderPlugin::fillMainInstances(entt::registry &reg) {
+  const auto &frame = reg.ctx().get<FrameContext>();
+  const Frustum camera(frame.proj * frame.view);
+  for (auto &[key, batch] : propBatches)
+    batch.staging.clear();
+  for (auto [e, meshRef, t] : reg.view<Prop, MeshRef, Transform>().each()) {
+    const glm::mat4 model = t.matrix();
+    const auto [center, radius] = worldBounds(*meshRef.mesh, model, t.scale);
+    if (camera.visible(center, radius))
+      propBatches.at(meshRef.mesh.get()).staging.push_back(model);
+  }
+  for (auto &[key, batch] : propBatches) {
+    batch.count = static_cast<uint32_t>(batch.staging.size());
+    uploadInstances(batch.instances[frame.frameIndex], batch.staging);
+  }
+}
+
+// One run of visible props per shadow pass, per batch. In start(): the
+// shadow draws recorded there need their counts and a buffer that won't be
+// replaced later this frame. So shadows use last frame's prop transforms.
+void RenderPlugin::fillShadowInstances(
+    entt::registry &reg, const std::vector<const glm::mat4 *> &passes) {
+  const auto &frame = reg.ctx().get<FrameContext>();
+  struct Instance {
+    PropBatch *batch;
+    glm::mat4  model;
+    glm::vec3  center;
+    float      radius;
+  };
+  std::vector<Instance> props;
+  for (auto [e, meshRef, t] : reg.view<Prop, MeshRef, Transform>().each()) {
+    const glm::mat4 model = t.matrix();
+    const auto [center, radius] = worldBounds(*meshRef.mesh, model, t.scale);
+    props.push_back(
+        {&propBatches.at(meshRef.mesh.get()), model, center, radius});
+  }
+  for (auto &[key, batch] : propBatches) {
+    batch.staging.clear();
+    batch.shadowSegments.assign(passes.size(), {0, 0});
+  }
+  for (size_t p = 0; p < passes.size(); p++) {
+    if (!passes[p])
+      continue;
+    const Frustum frustum(*passes[p]);
+    for (auto &[key, batch] : propBatches)
+      batch.shadowSegments[p].first = static_cast<uint32_t>(batch.staging.size());
+    for (const Instance &i : props)
+      if (frustum.visible(i.center, i.radius))
+        i.batch->staging.push_back(i.model);
+    for (auto &[key, batch] : propBatches)
+      batch.shadowSegments[p].second = static_cast<uint32_t>(
+          batch.staging.size() - batch.shadowSegments[p].first);
+  }
+  for (auto &[key, batch] : propBatches)
+    uploadInstances(batch.shadowInstances[frame.frameIndex], batch.staging);
 }
 
 // One entity's submeshes, bound and drawn through `layout`. Shared by the main
@@ -852,7 +967,7 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
 void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
                     const vk::raii::PipelineLayout &layout, uint32_t frameIndex,
                     const Mesh &mesh, const Renderable &renderable,
-                    uint32_t instanceCount) {
+                    uint32_t instanceCount, uint32_t firstInstance) {
   commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer, {0});
   commandBuffer.bindIndexBuffer(*mesh.indexBuffer, 0, vk::IndexType::eUint32);
 
@@ -860,7 +975,8 @@ void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *layout, 0,
         *renderable.descriptorSets[0][frameIndex], nullptr);
-    commandBuffer.drawIndexed(mesh.indexCount, instanceCount, 0, 0, 0);
+    commandBuffer.drawIndexed(mesh.indexCount, instanceCount, 0, 0,
+                              firstInstance);
     return;
   }
 
@@ -869,7 +985,8 @@ void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
     commandBuffer.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics, *layout, 0,
         *renderable.descriptorSets[s][frameIndex], nullptr);
-    commandBuffer.drawIndexed(sub.indexCount, instanceCount, sub.indexOffset, 0, 0);
+    commandBuffer.drawIndexed(sub.indexCount, instanceCount, sub.indexOffset, 0,
+                              firstInstance);
   }
 }
 
@@ -884,10 +1001,17 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
 
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
                              *graphicsPipeline);
-  for (auto [entity, meshRef, renderable] :
-       reg.view<MeshRef, Renderable>(entt::exclude<DebugMesh>).each()) {
+  const Frustum camera(frame.proj * frame.view);
+  mainDraws = 0;
+  for (auto [entity, meshRef, renderable, t] :
+       reg.view<MeshRef, Renderable, Transform>(entt::exclude<DebugMesh>)
+           .each()) {
+    const auto [center, radius] = worldBounds(*meshRef.mesh, t.matrix(), t.scale);
+    if (!camera.visible(center, radius))
+      continue;
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
                    *meshRef.mesh, renderable);
+    mainDraws++;
   }
 
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *propPipeline);

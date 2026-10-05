@@ -22,6 +22,18 @@ void Mesh::upload(const std::vector<Vertex> &vertices,
   auto &device = Core::get()->device;
   indexCount = static_cast<uint32_t>(indices.size());
 
+  glm::vec3 lo(std::numeric_limits<float>::max()), hi(-lo);
+  for (const Vertex &v : vertices) {
+    lo = glm::min(lo, v.pos);
+    hi = glm::max(hi, v.pos);
+  }
+  boundsMin = lo;
+  boundsMax = hi;
+  boundsCenter = (lo + hi) * 0.5f;
+  boundsRadius = 0.0f;
+  for (const Vertex &v : vertices)
+    boundsRadius = std::max(boundsRadius, glm::distance(v.pos, boundsCenter));
+
   const auto stage = [&](const void *src, vk::DeviceSize size,
                          vk::BufferUsageFlags usage, vk::raii::Buffer &buffer,
                          vk::raii::DeviceMemory &memory) {
