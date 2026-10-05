@@ -36,15 +36,34 @@ struct UniformBufferObject {
     SpotLight        spotLights[MAX_LIGHTS];
     // x: directional, y: point, z: spot. w unused.
     uint4 counts;
+    // Last, so outline.slang's shorter copy of this struct stays a valid prefix.
+    // World -> shadow map clip space for dirLights[0].
+    float4x4 lightViewProj;
+    // x: 1 if the shadow map holds dirLights[0] this frame, y: texel size
+    // (1 / resolution), z: depth bias. w unused.
+    float4 shadow;
+    // Spot and point lights: layers of localShadowMap. Spot i is layer i,
+    // point i face f is layer MAX_LIGHTS + 6i + f, with matrix pointViewProj[6i + f].
+    float4x4 spotViewProj[MAX_LIGHTS];
+    float4x4 pointViewProj[MAX_LIGHTS * 6];
+    // x: spot lights with a rendered layer, y: point lights with rendered
+    // faces (a light added mid-frame has none yet), z: texel size, w: depth bias.
+    float4 localShadow;
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
 [[vk::binding(1, 0)]] Sampler2D texSampler;
+// Depth of the scene seen from dirLights[0] (RenderPlugin::drawShadowPass),
+// read through a comparison sampler: each tap returns the 0..1 fraction of
+// its 2x2 texels that are lit.
+[[vk::binding(2, 0)]] Sampler2DShadow shadowMap;
+[[vk::binding(3, 0)]] Sampler2DArrayShadow localShadowMap;
 
-// No sun shadow: it was an inline ray query against a TLAS at binding 2, which
-// the host never bound and this hardware has no VK_KHR_ray_query for anyway.
-// Everything below is lit unoccluded. A shadow map is the way back, not
-// RayQuery.
+// The shadow pass's matrix (sun, a spot, or one point light face), per draw.
+struct ShadowPush {
+    float4x4 viewProj;
+};
+[[vk::push_constant]] ConstantBuffer<ShadowPush> shadowPush;
 
 // Tuning knobs. Nothing here is measured, so expect to nudge them.
 static const float3 SKY_COLOR = float3(0.35, 0.48, 0.72);
@@ -92,6 +111,81 @@ VSOutput vertMainInstanced(float3 position, float3 color, float2 uv, float3 norm
     output.worldNormal = normalize(mul(normal, float3x3(c0.xyz, c1.xyz, c2.xyz)));
     output.viewDir = ubo.cameraPos.xyz - world.xyz;
     return output;
+}
+
+// Shadow pass: depth only, no fragment stage. Same per-entity UBO as vertMain;
+// which light/face it renders for comes in as a push constant.
+[shader("vertex")]
+float4 shadowVert(float3 position, float3 color, float2 uv, float3 normal) : SV_Position {
+    return mul(shadowPush.viewProj, mul(ubo.model, float4(position, 1.0)));
+}
+
+// Props in the shadow pass: the instance matrix, as in vertMainInstanced.
+[shader("vertex")]
+float4 shadowVertInstanced(float3 position, float3 color, float2 uv, float3 normal,
+                           float4 c0, float4 c1, float4 c2, float4 c3) : SV_Position {
+    float4 world = mul(float4(position, 1.0), float4x4(c0, c1, c2, c3));
+    return mul(shadowPush.viewProj, world);
+}
+
+// Same 3x3 compare as sunShadow, against one layer of the local array.
+// Outside the layer's frustum counts as lit.
+float localShadow(float3 worldPos, float4x4 viewProj, uint layer) {
+    float4 clip = mul(viewProj, float4(worldPos, 1.0));
+    if (clip.w <= 0.0) { return 1.0; }
+    float3 ndc = clip.xyz / clip.w;
+    if (ndc.z > 1.0 || any(abs(ndc.xy) > 1.0)) { return 1.0; }
+    float2 uv = ndc.xy * 0.5 + 0.5;
+    float depth = ndc.z - ubo.localShadow.w;
+    float lit = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            lit += localShadowMap.SampleCmpLevelZero(
+                float3(uv + float2(x, y) * ubo.localShadow.z, layer), depth);
+        }
+    }
+    return lit / 9.0;
+}
+
+float spotShadow(float3 worldPos, uint i) {
+    if (float(i) >= ubo.localShadow.x) { return 1.0; }
+    return localShadow(worldPos, ubo.spotViewProj[i], i);
+}
+
+// The face is the dominant axis of light -> fragment, in the order
+// +X -X +Y -Y +Z -Z (RenderPlugin::cubeFaces).
+float pointShadow(float3 worldPos, uint i) {
+    if (float(i) >= ubo.localShadow.y) { return 1.0; }
+    float3 d = worldPos - ubo.pointLights[i].position.xyz;
+    float3 a = abs(d);
+    // Even index = the positive direction of the axis, odd = negative.
+    uint face;
+    float along;
+    if (a.x >= a.y && a.x >= a.z) { face = 0; along = d.x; }
+    else if (a.y >= a.z)          { face = 2; along = d.y; }
+    else                          { face = 4; along = d.z; }
+    if (along <= 0.0) { face += 1; }
+    return localShadow(worldPos, ubo.pointViewProj[i * 6 + face],
+                       MAX_LIGHTS + i * 6 + face);
+}
+
+// 1 = lit by dirLights[0], 0 = something sits between it and the light.
+// 3x3 taps of the hardware 2x2 compare: soft-ish edges instead of stairs.
+float sunShadow(float3 worldPos) {
+    if (ubo.shadow.x < 0.5) { return 1.0; }
+    float4 clip = mul(ubo.lightViewProj, float4(worldPos, 1.0));
+    float3 ndc = clip.xyz / clip.w;
+    // Past the far plane or outside the box: not covered, so not shadowed.
+    if (ndc.z > 1.0 || any(abs(ndc.xy) > 1.0)) { return 1.0; }
+    float2 uv = ndc.xy * 0.5 + 0.5;
+    float depth = ndc.z - ubo.shadow.z;
+    float lit = 0.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            lit += shadowMap.SampleCmpLevelZero(uv + float2(x, y) * ubo.shadow.y, depth);
+        }
+    }
+    return lit / 9.0;
 }
 
 // Narkowicz's ACES fit. The swapchain is B8G8R8A8_SRGB, so it encodes gamma for us
@@ -255,14 +349,19 @@ float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : S
 
     for (uint i = 0; i < ubo.counts.x; i++) {
         float3 l = normalize(ubo.dirLights[i].direction.xyz);
-        lit += ubo.dirLights[i].color.rgb * brdf(n, v, l, albedo, metallic, roughness, eAvg);
+        // Only the first directional light has a shadow map.
+        float shadow = 1.0;
+        if (i == 0) { shadow = sunShadow(worldPos); }
+        lit += shadow * ubo.dirLights[i].color.rgb *
+               brdf(n, v, l, albedo, metallic, roughness, eAvg);
     }
     for (uint i = 0; i < ubo.counts.y; i++) {
         float3 d = ubo.pointLights[i].position.xyz - worldPos;
         float dist = length(d);
         float atten = windowedFalloff(dist, ubo.pointLights[i].position.w);
         if (atten <= 0.0) { continue; }
-        lit += ubo.pointLights[i].color.rgb * ubo.pointLights[i].color.w * atten *
+        lit += pointShadow(worldPos, i) *
+               ubo.pointLights[i].color.rgb * ubo.pointLights[i].color.w * atten *
                brdf(n, v, d / max(dist, 1e-4), albedo, metallic, roughness, eAvg);
     }
     for (uint i = 0; i < ubo.counts.z; i++) {
@@ -280,7 +379,8 @@ float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : S
         // ponytail: SpotLight has no range field, so distance is pure
         // inverse-square. Add one and reuse windowedFalloff if spots need to
         // stop at a set distance like point lights do.
-        lit += ubo.spotLights[i].color.rgb * ubo.spotLights[i].color.w *
+        lit += spotShadow(worldPos, i) *
+               ubo.spotLights[i].color.rgb * ubo.spotLights[i].color.w *
                cone / (dist * dist + 1.0) *
                brdf(n, v, l, albedo, metallic, roughness, eAvg);
     }

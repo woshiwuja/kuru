@@ -77,7 +77,8 @@ struct Graphics {
                    vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                    vk::MemoryPropertyFlags properties, vk::raii::Image &image,
                    vk::raii::DeviceMemory &imageMemory,
-                   vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
+                   vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1,
+                   uint32_t layers = 1);
   vk::raii::ImageView createImageView(vk::raii::Image &image, vk::Format format,
                                       vk::ImageAspectFlags aspectFlags);
   void createTextureSampler();

@@ -9,6 +9,7 @@
 #include "render/render.hpp"
 #include "character/stats.hpp"
 #include "transform/transform.hpp"
+#include "picking/picking.hpp"
 #include <format>
 #include <string>
 
@@ -35,8 +36,11 @@ struct DefaultPlugin : public Plugin {
         JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     spawn(reg, e, "models/spongebob.glb", "");
-        spawnProp(reg, reg.create(), "models/default_item.glb", "",
-                  Transform{.position = {3.0, 100, 3.0},.scale= {1.0,1.0,1.0}});
+    reg.emplace<Pickable>(e);
+    auto prop = reg.create();
+    spawnProp(reg, prop, "models/default_item.glb", "",
+              Transform{.position = {3.0, 100, 3.0},.scale= {.1,.1,.1}});
+    reg.emplace<Pickable>(prop);
   };
   void update(entt::registry &reg) override {}
 };

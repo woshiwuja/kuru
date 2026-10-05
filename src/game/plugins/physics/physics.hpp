@@ -261,12 +261,14 @@ struct PhysicsPlugin : public Plugin {
     using namespace ImGui;
     auto &s = Core::get()->physicsManager.get()->system;
     auto &b = Core::get()->physicsManager.get()->bodies();
-    Begin("Physics");
+    Begin("World Physics");
     if (DragFloat3("Gravity", &gravity.x, 0.1, -100, 100)) {
       s.SetGravity(glmVecToJPH(gravity));
     }
+    End();
+    Begin("Body Physics");
     Checkbox("Draw Bodies", &drawBodies);
-    for (auto [e, id] : r.view<JPH::BodyID>().each()) {
+    for (auto [e, id] : r.view<JPH::BodyID, Selected>().each()) {
       PushID(static_cast<int>(entt::to_integral(e)));
       if (TreeNode("Body", "Body %u", id.GetIndex()))
         bodyUI(b, id);

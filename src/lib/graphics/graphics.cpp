@@ -231,7 +231,7 @@ void Graphics::createImage(uint32_t width, uint32_t height, vk::Format format,
                    vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                    vk::MemoryPropertyFlags properties, vk::raii::Image &image,
                    vk::raii::DeviceMemory &imageMemory,
-                   vk::SampleCountFlagBits samples) {
+                   vk::SampleCountFlagBits samples, uint32_t layers) {
     const auto& core = Core::Core::get();
     // Defaults to e1 on purpose: every texture goes through here, and a
     // multisampled image can be neither copied into nor sampled by a shader.
@@ -240,7 +240,7 @@ void Graphics::createImage(uint32_t width, uint32_t height, vk::Format format,
                                   .format = format,
                                   .extent = {width, height, 1},
                                   .mipLevels = 1,
-                                  .arrayLayers = 1,
+                                  .arrayLayers = layers,
                                   .samples = samples,
                                   .tiling = tiling,
                                   .usage = usage,

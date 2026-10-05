@@ -11,7 +11,7 @@
 using namespace KR;
 
 struct MeshRef {
-	std::shared_ptr<Mesh> mesh;
+	std::shared_ptr<Mesh> mesh = createCube();
 };
 
 struct UniformBufferObject
@@ -29,11 +29,22 @@ struct UniformBufferObject
 	// x: directional, y: point, z: spot. w unused. One uvec4 rather than three
 	// trailing uints, so there is no scalar-offset question at the end.
 	alignas(16) glm::uvec4 counts{0};
+	// Shadow map for dirLights[0]: world -> light clip space, and
+	// x: map valid this frame, y: texel size, z: depth bias.
+	alignas(16) glm::mat4 lightViewProj{1.0f};
+	alignas(16) glm::vec4 shadow{0.0f};
+	// Spot i = layer i of the local array, point i face f = layer
+	// MAX_LIGHTS + 6i + f. localShadow: x/y = spot/point lights rendered,
+	// z = texel size, w = depth bias.
+	alignas(16) glm::mat4 spotViewProj[MAX_LIGHTS];
+	alignas(16) glm::mat4 pointViewProj[MAX_LIGHTS * 6];
+	alignas(16) glm::vec4 localShadow{0.0f};
 };
 // The C++ <-> slang correspondence is maintained by hand, so pin the one
 // number that catches a drift in either file.
 static_assert(sizeof(UniformBufferObject) ==
-                  3 * 64 + 4 * 16 + MAX_LIGHTS * (32 + 32 + 48) + 16,
+                  3 * 64 + 4 * 16 + MAX_LIGHTS * (32 + 32 + 48) + 16 +
+                      64 + 16 + MAX_LIGHTS * 7 * 64 + 16,
               "UniformBufferObject no longer matches its std140 layout");
 
 struct Renderable {
@@ -64,6 +75,39 @@ struct DebugMesh {};
 struct DebugWire {};
 struct Prop {};
 
+// The six planes of a view-projection with 0..1 depth (Gribb-Hartmann), for
+// bounding-sphere tests. Works for the camera's reversed-Z too: 0 <= z <= w
+// either way, only which plane is "near" swaps.
+struct Frustum {
+	std::array<glm::vec4, 6> planes;
+	explicit Frustum(const glm::mat4 &m) {
+		const auto row = [&](int r) {
+			return glm::vec4(m[0][r], m[1][r], m[2][r], m[3][r]);
+		};
+		planes = {row(3) + row(0), row(3) - row(0), row(3) + row(1),
+		          row(3) - row(1), row(2),          row(3) - row(2)};
+		for (auto &p : planes)
+			p /= glm::length(glm::vec3(p));
+	}
+	// False only if the sphere is entirely outside one plane.
+	bool visible(glm::vec3 center, float radius) const {
+		for (const auto &p : planes)
+			if (glm::dot(glm::vec3(p), center) + p.w < -radius)
+				return false;
+		return true;
+	}
+};
+
+// A mesh's model-space bounding sphere moved into the world by `model`.
+inline std::pair<glm::vec3, float> worldBounds(const Mesh &mesh,
+                                               const glm::mat4 &model,
+                                               glm::vec3 scale) {
+	const float s = std::max({std::abs(scale.x), std::abs(scale.y),
+	                          std::abs(scale.z)});
+	return {glm::vec3(model * glm::vec4(mesh.boundsCenter, 1.0f)),
+	        mesh.boundsRadius * s};
+}
+
 struct PropBatch {
 	std::shared_ptr<Mesh>     mesh;
 	std::shared_ptr<Material> material;
@@ -74,8 +118,14 @@ struct PropBatch {
 		glm::mat4             *mapped   = nullptr;
 		uint32_t               capacity = 0;
 	};
-	std::array<InstanceBuffer, MAX_FRAMES_IN_FLIGHT> instances; // vertex binding 1
+	// Vertex binding 1. `instances` holds the props the camera sees (filled in
+	// update, `count` of them); `shadowInstances` holds one run per shadow pass,
+	// shadowSegments[pass] = {first, count} (filled in start).
+	std::array<InstanceBuffer, MAX_FRAMES_IN_FLIGHT> instances;
+	std::array<InstanceBuffer, MAX_FRAMES_IN_FLIGHT> shadowInstances;
 	uint32_t                                         count = 0;
+	std::vector<std::pair<uint32_t, uint32_t>>       shadowSegments;
+	std::vector<glm::mat4>                           staging; // CPU side of a fill
 };
 
 struct RenderPlugin : Plugin {
@@ -94,6 +144,45 @@ struct RenderPlugin : Plugin {
 	vk::raii::Pipeline            debugWirePipeline   = nullptr;
 	vk::raii::Pipeline            propPipeline        = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
+
+	// Directional shadow map: depth from dirLights[0], drawn in start() and
+	// sampled by every mesh at binding 2. One image is enough - the barrier in
+	// drawShadowPass waits for the previous frame's reads before rewriting it.
+	static constexpr uint32_t   shadowSize   = 2048;
+	static constexpr vk::Format shadowFormat = vk::Format::eD32Sfloat;
+	vk::raii::Image             shadowImage  = nullptr;
+	vk::raii::DeviceMemory      shadowMemory = nullptr;
+	vk::raii::ImageView         shadowView   = nullptr;
+	vk::raii::Sampler           shadowSampler  = nullptr;
+	vk::raii::Pipeline          shadowPipeline = nullptr;
+	vk::raii::Pipeline          shadowPropPipeline = nullptr; // instanced props
+	// Spot and point lights share one layered map: spots first, then six
+	// faces per point light (layer layout in UniformBufferObject).
+	static constexpr uint32_t localShadowSize   = 512;
+	static constexpr uint32_t localShadowLayers = MAX_LIGHTS * 7;
+	vk::raii::Image                  localShadowImage     = nullptr;
+	vk::raii::DeviceMemory           localShadowMemory    = nullptr;
+	vk::raii::ImageView              localShadowArrayView = nullptr; // sampled
+	std::vector<vk::raii::ImageView> localShadowLayerViews;          // rendered
+	// Computed in start() for the passes, copied into every UBO in update(),
+	// so the shader always compares against the matrices the maps used.
+	bool                                     sunShadowValid = false;
+	glm::mat4                                sunViewProj{1.0f};
+	std::array<glm::mat4, MAX_LIGHTS>        spotViewProj{};
+	std::array<glm::mat4, MAX_LIGHTS * 6>    pointViewProj{};
+	uint32_t                                 spotShadowCount  = 0;
+	uint32_t                                 pointShadowCount = 0;
+	struct ShadowConfig {
+		bool  enabled     = true;
+		float halfExtent  = 30.0f;  // box half-width around the camera, metres
+		float depthRange  = 200.0f; // box half-depth along the light
+		float biasConst   = 1.25f;  // rasterizer depth bias, in depth units
+		float biasSlope   = 1.75f;  // ...scaled by the triangle's slope
+		float shaderBias  = 0.0005f;
+		bool  localEnabled    = true;   // spot + point lights
+		float spotFar         = 50.0f;  // spots have no range, so the map needs one
+		float localShaderBias = 0.0002f;
+	} shadowConfig;
 
 	// GPU resources of despawned entities, kept until every frame that could
 	// reference them has retired. Declared after descriptorPool so the sets go
@@ -117,6 +206,28 @@ struct RenderPlugin : Plugin {
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
 	void createDescriptorPool();
+	void createShadowResources();
+	void drawShadowPass(entt::registry &reg);
+	// lightViewProj for dirLights[0], centred on `center`; false if no light.
+	bool shadowMatrix(entt::registry &reg, glm::vec3 center, glm::mat4 &out) const;
+	void updateShadowMatrices(entt::registry &reg);
+	uint32_t mainDraws = 0; // camera-visible entities this frame, for the UI
+	// A mesh entity's world-space bounding sphere, gathered once per frame and
+	// tested against every shadow view.
+	struct ShadowCaster {
+		const Mesh       *mesh;
+		const Renderable *renderable;
+		glm::vec3         center;
+		float             radius;
+	};
+	std::vector<ShadowCaster> shadowCasters;
+	uint32_t                  shadowDraws = 0; // this frame, for the UI
+	// viewProj == nullptr: clear only. `pass` indexes PropBatch::shadowSegments.
+	void shadowLayerPass(entt::registry &reg, vk::ImageView view, uint32_t size,
+	                     const glm::mat4 *viewProj, uint32_t pass);
+	void fillShadowInstances(entt::registry &reg,
+	                         const std::vector<const glm::mat4 *> &passes);
+	void fillMainInstances(entt::registry &reg);
 	[[nodiscard]] vk::raii::ShaderModule
 	createShaderModule(const std::vector<char> &code) const;
 
@@ -129,6 +240,10 @@ struct RenderPlugin : Plugin {
 	               std::shared_ptr<Mesh> mesh, std::shared_ptr<Texture> texture,
 	               Transform transform = {});
 	void despawn(entt::registry &reg, entt::entity entity);
+	// The instanced batch props with `mesh` draw through, created on first use
+	// (`texture` is only read then).
+	PropBatch &propBatch(const std::shared_ptr<Mesh> &mesh,
+	                     const std::shared_ptr<Texture> &texture);
 
 	[[nodiscard]] Renderable makeRenderable(const Mesh &mesh,
 	                                        const std::shared_ptr<Texture> &texture);
@@ -139,7 +254,7 @@ struct RenderPlugin : Plugin {
 void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
                     const vk::raii::PipelineLayout &layout, uint32_t frameIndex,
                     const Mesh &mesh, const Renderable &renderable,
-                    uint32_t instanceCount = 1);
+                    uint32_t instanceCount = 1, uint32_t firstInstance = 0);
 
 inline RenderPlugin &renderer(entt::registry &reg) {
   auto *plugin = reg.ctx().find<RenderPlugin *>();
