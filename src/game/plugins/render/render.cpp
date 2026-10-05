@@ -16,6 +16,7 @@ void RenderPlugin::init(entt::registry &reg) {
   createDescriptorSetLayout();
   createGraphicsPipeline();
   createDescriptorPool();
+  createShadowResources(); // before any makeRenderable: it binds the map
 }
 
 void RenderPlugin::createDescriptorSetLayout() {
@@ -27,6 +28,13 @@ void RenderPlugin::createDescriptorSetLayout() {
                                      nullptr),
       vk::DescriptorSetLayoutBinding(
           1, vk::DescriptorType::eCombinedImageSampler, 1,
+          vk::ShaderStageFlagBits::eFragment, nullptr),
+      // The shadow maps (see createShadowResources): sun, then spot/point.
+      vk::DescriptorSetLayoutBinding(
+          2, vk::DescriptorType::eCombinedImageSampler, 1,
+          vk::ShaderStageFlagBits::eFragment, nullptr),
+      vk::DescriptorSetLayoutBinding(
+          3, vk::DescriptorType::eCombinedImageSampler, 1,
           vk::ShaderStageFlagBits::eFragment, nullptr)};
 
   vk::DescriptorSetLayoutCreateInfo layoutInfo{
@@ -108,10 +116,18 @@ void RenderPlugin::createGraphicsPipeline() {
       .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
       .pDynamicStates = dynamicStates.data()};
 
+  // The shadow pass's light matrix (ShadowPush in slang.slang). Every mesh
+  // pipeline shares this layout; only shadowVert reads the range.
+  vk::PushConstantRange shadowPushRange{.stageFlags =
+                                            vk::ShaderStageFlagBits::eVertex,
+                                        .offset = 0,
+                                        .size = sizeof(glm::mat4)};
   vk::PipelineLayoutCreateInfo pipelineLayoutInfo{.setLayoutCount = 1,
                                                   .pSetLayouts =
                                                       &*descriptorSetLayout,
-                                                  .pushConstantRangeCount = 0};
+                                                  .pushConstantRangeCount = 1,
+                                                  .pPushConstantRanges =
+                                                      &shadowPushRange};
 
   pipelineLayout =
       vk::raii::PipelineLayout(core->device->device, pipelineLayoutInfo);
@@ -196,8 +212,9 @@ void RenderPlugin::createDescriptorPool() {
   std::array poolSize{
       vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer,
                              MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT),
+      // Three per set: the texture and the two shadow maps.
       vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler,
-                             MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT)};
+                             3 * MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT)};
   vk::DescriptorPoolCreateInfo poolInfo{
       .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
       .maxSets = MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT,
@@ -215,6 +232,8 @@ void RenderPlugin::start(entt::registry &reg) {
   std::erase_if(retired, [this](const Retired &r) {
     return r.frame + MAX_FRAMES_IN_FLIGHT <= frameCount;
   });
+  drawShadowPass(reg);
+
 }
 
 void RenderPlugin::update(entt::registry &reg) {
@@ -222,14 +241,49 @@ void RenderPlugin::update(entt::registry &reg) {
   updateUniforms(reg);
   drawMeshes(reg);
   ImGui::ShowDemoWindow();
+  // Last 120 frames, oldest at `head`. ImGui's delta, not Core's: that one
+  // reads 0 while paused, and the frames still take time.
+  static std::array<float, 120> frameMs{}, fps{};
+  static int head = 0;
+  const float dt = std::max(ImGui::GetIO().DeltaTime, 1e-6f);
+  frameMs[head] = dt * 1000.0f;
+  fps[head] = 1.0f / dt;
+  head = (head + 1) % frameMs.size();
   if (ImGui::Begin("Scene")) {
-    ImGui::Text("%.1f fps (%.2f ms)", 1.0f / std::max(core->deltaTime(), 1e-6f),
-                core->deltaTime() * 1000.0f);
+    ImGui::Text("%.1f fps (%.2f ms)", 1.0f / dt, dt * 1000.0f);
+    const ImVec2 size(-1.0f, 60.0f); // full width
+    ImGui::PlotHistogram("##frame ms", frameMs.data(), frameMs.size(), head,
+                         "frame time (ms)", 0.0f, FLT_MAX, size);
+    ImGui::PlotLines("##fps", fps.data(), fps.size(), head, "fps", 0.0f,
+                     FLT_MAX, size);
     ImGui::Text("drawables: %zu", reg.view<MeshRef>().size());
     ImGui::Text("swapchain: %ux%u", core->graphics->swapChainExtent.width,
                 core->graphics->swapChainExtent.height);
   }
   ImGui::End();
+
+  if (ImGui::Begin("Shadows")) {
+    auto &c = shadowConfig;
+    ImGui::Checkbox("enabled", &c.enabled);
+    // Bigger box = more scene covered, blurrier shadows (fixed 2048 texels).
+    ImGui::DragFloat("half extent", &c.halfExtent, 0.5f, 1.0f, 500.0f);
+    ImGui::DragFloat("depth range", &c.depthRange, 1.0f, 1.0f, 2000.0f);
+    // Acne (striped self-shadowing) -> raise; shadows detaching from their
+    // casters (peter-panning) -> lower.
+    ImGui::DragFloat("bias const", &c.biasConst, 0.05f, 0.0f, 20.0f);
+    ImGui::DragFloat("bias slope", &c.biasSlope, 0.05f, 0.0f, 20.0f);
+    ImGui::DragFloat("shader bias", &c.shaderBias, 0.0001f, 0.0f, 0.05f,
+                     "%.4f");
+    ImGui::SeparatorText("spot + point");
+    ImGui::Checkbox("local enabled", &c.localEnabled);
+    ImGui::DragFloat("spot far", &c.spotFar, 0.5f, 1.0f, 500.0f);
+    ImGui::DragFloat("local shader bias", &c.localShaderBias, 0.00005f, 0.0f,
+                     0.01f, "%.5f");
+    ImGui::Text("shadowed: %u spot, %u point (%u passes)", spotShadowCount,
+                pointShadowCount, 1 + spotShadowCount + 6 * pointShadowCount);
+  }
+  ImGui::End();
+
 }
 
 // The material editor's values: the rest of a Material is textures and GPU
@@ -377,6 +431,14 @@ Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
           .sampler = *core->graphics->sampler,
           .imageView = *subTexture->view,
           .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+      vk::DescriptorImageInfo shadowInfo{
+          .sampler = *shadowSampler,
+          .imageView = *shadowView,
+          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+      vk::DescriptorImageInfo localShadowInfo{
+          .sampler = *shadowSampler,
+          .imageView = *localShadowArrayView,
+          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
       std::array descriptorWrites{
           vk::WriteDescriptorSet{.dstSet = *renderable.descriptorSets[s][i],
                                  .dstBinding = 0,
@@ -391,7 +453,21 @@ Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
                                  .descriptorCount = 1,
                                  .descriptorType =
                                      vk::DescriptorType::eCombinedImageSampler,
-                                 .pImageInfo = &imageInfo}};
+                                 .pImageInfo = &imageInfo},
+          vk::WriteDescriptorSet{.dstSet = *renderable.descriptorSets[s][i],
+                                 .dstBinding = 2,
+                                 .dstArrayElement = 0,
+                                 .descriptorCount = 1,
+                                 .descriptorType =
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                 .pImageInfo = &shadowInfo},
+          vk::WriteDescriptorSet{.dstSet = *renderable.descriptorSets[s][i],
+                                 .dstBinding = 3,
+                                 .dstArrayElement = 0,
+                                 .descriptorCount = 1,
+                                 .descriptorType =
+                                     vk::DescriptorType::eCombinedImageSampler,
+                                 .pImageInfo = &localShadowInfo}};
       core->device->device.updateDescriptorSets(descriptorWrites, {});
     }
   }
@@ -410,6 +486,279 @@ void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
   reg.destroy(entity);
 }
 
+// ---- shadows ----------------------------------------------------------------
+// A depth-only pass from dirLights[0] into shadowImage, sampled with a
+// comparison sampler at binding 2 of every mesh descriptor set. Standard Z
+// here (clear 1, nearer = smaller), unlike the reversed-Z main pass: the map is
+// its own projection and the shader compares against it directly.
+
+void RenderPlugin::createShadowResources() {
+  auto core = Core::get();
+  auto &graphics = core->graphics;
+  graphics->createImage(shadowSize, shadowSize, shadowFormat,
+                        vk::ImageTiling::eOptimal,
+                        vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                            vk::ImageUsageFlagBits::eSampled,
+                        vk::MemoryPropertyFlagBits::eDeviceLocal, shadowImage,
+                        shadowMemory);
+  shadowView = graphics->createImageView(shadowImage, shadowFormat,
+                                         vk::ImageAspectFlagBits::eDepth);
+
+  graphics->createImage(localShadowSize, localShadowSize, shadowFormat,
+                        vk::ImageTiling::eOptimal,
+                        vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                            vk::ImageUsageFlagBits::eSampled,
+                        vk::MemoryPropertyFlagBits::eDeviceLocal,
+                        localShadowImage, localShadowMemory,
+                        vk::SampleCountFlagBits::e1, localShadowLayers);
+  vk::ImageViewCreateInfo viewInfo{
+      .image = *localShadowImage,
+      .viewType = vk::ImageViewType::e2DArray,
+      .format = shadowFormat,
+      .subresourceRange = {vk::ImageAspectFlagBits::eDepth, 0, 1, 0,
+                           localShadowLayers}};
+  localShadowArrayView = vk::raii::ImageView(core->device->device, viewInfo);
+  viewInfo.viewType = vk::ImageViewType::e2D;
+  viewInfo.subresourceRange.layerCount = 1;
+  for (uint32_t layer = 0; layer < localShadowLayers; layer++) {
+    viewInfo.subresourceRange.baseArrayLayer = layer;
+    localShadowLayerViews.emplace_back(core->device->device, viewInfo);
+  }
+
+  // Linear + compare: each tap is hardware 2x2 PCF. Off the map is white =
+  // depth 1 = never in shadow.
+  vk::SamplerCreateInfo samplerInfo{
+      .magFilter = vk::Filter::eLinear,
+      .minFilter = vk::Filter::eLinear,
+      .mipmapMode = vk::SamplerMipmapMode::eNearest,
+      .addressModeU = vk::SamplerAddressMode::eClampToBorder,
+      .addressModeV = vk::SamplerAddressMode::eClampToBorder,
+      .addressModeW = vk::SamplerAddressMode::eClampToBorder,
+      .compareEnable = vk::True,
+      .compareOp = vk::CompareOp::eLessOrEqual,
+      .borderColor = vk::BorderColor::eFloatOpaqueWhite};
+  shadowSampler = vk::raii::Sampler(core->device->device, samplerInfo);
+
+  vk::raii::ShaderModule shaderModule =
+      createShaderModule(readFile("shaders/slang.spv"));
+  vk::PipelineShaderStageCreateInfo stage{
+      .stage = vk::ShaderStageFlagBits::eVertex,
+      .module = *shaderModule,
+      .pName = "shadowVert"};
+  auto bindingDescription = Vertex::getBindingDescription();
+  auto attributeDescriptions = Vertex::getAttributeDescriptions();
+  vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+      .vertexBindingDescriptionCount = 1,
+      .pVertexBindingDescriptions = &bindingDescription,
+      .vertexAttributeDescriptionCount =
+          static_cast<uint32_t>(attributeDescriptions.size()),
+      .pVertexAttributeDescriptions = attributeDescriptions.data()};
+  vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
+      .topology = vk::PrimitiveTopology::eTriangleList};
+  vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1,
+                                                    .scissorCount = 1};
+  // No culling: the light matrix isn't Y-flipped like the camera's, so the
+  // winding is mirrored, and thin one-sided geometry should cast either way.
+  // The slope bias is what keeps lit faces from shadowing themselves (acne).
+  vk::PipelineRasterizationStateCreateInfo rasterizer{
+      .polygonMode = vk::PolygonMode::eFill,
+      .cullMode = vk::CullModeFlagBits::eNone,
+      .frontFace = vk::FrontFace::eCounterClockwise,
+      .depthBiasEnable = vk::True,
+      .lineWidth = 1.0f};
+  vk::PipelineMultisampleStateCreateInfo multisampling{
+      .rasterizationSamples = vk::SampleCountFlagBits::e1};
+  vk::PipelineDepthStencilStateCreateInfo depthStencil{
+      .depthTestEnable = vk::True,
+      .depthWriteEnable = vk::True,
+      .depthCompareOp = vk::CompareOp::eLess};
+  vk::PipelineColorBlendStateCreateInfo colorBlending{.attachmentCount = 0};
+  std::vector dynamicStates = {vk::DynamicState::eViewport,
+                               vk::DynamicState::eScissor,
+                               vk::DynamicState::eDepthBias};
+  vk::PipelineDynamicStateCreateInfo dynamicState{
+      .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+      .pDynamicStates = dynamicStates.data()};
+
+  // The mesh layout: shadowVert reads the same per-entity UBO at binding 0.
+  vk::StructureChain<vk::GraphicsPipelineCreateInfo,
+                     vk::PipelineRenderingCreateInfo>
+      chain = {{.stageCount = 1,
+                .pStages = &stage,
+                .pVertexInputState = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState = &multisampling,
+                .pDepthStencilState = &depthStencil,
+                .pColorBlendState = &colorBlending,
+                .pDynamicState = &dynamicState,
+                .layout = *pipelineLayout,
+                .renderPass = nullptr},
+               {.colorAttachmentCount = 0,
+                .depthAttachmentFormat = shadowFormat}};
+  shadowPipeline = vk::raii::Pipeline(
+      core->device->device, nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+}
+
+bool RenderPlugin::shadowMatrix(entt::registry &reg, glm::vec3 center,
+                                glm::mat4 &out) const {
+  // The first one: the same light updateUniforms copies into dirLights[0].
+  auto lights = reg.view<DirectionalLight>();
+  if (lights.begin() == lights.end())
+    return false;
+  // direction points at the light (it's the shader's `l`), so the light's
+  // rays travel along -l.
+  const glm::vec3 l = glm::normalize(
+      glm::vec3(lights.get<DirectionalLight>(*lights.begin()).direction));
+  const glm::vec3 up =
+      std::abs(l.y) > 0.99f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0);
+  const glm::mat4 view = glm::lookAt(glm::vec3(0.0f), -l, up);
+
+  // Snap the box to whole texels in light space, or every camera step
+  // resamples the map and shadow edges crawl.
+  const float s = shadowConfig.halfExtent, d = shadowConfig.depthRange;
+  const float texel = 2.0f * s / shadowSize;
+  glm::vec3 c = view * glm::vec4(center, 1.0f);
+  c.x = std::floor(c.x / texel) * texel;
+  c.y = std::floor(c.y / texel) * texel;
+  // View space looks down -z, so the box spans distances -c.z +- d.
+  out = glm::orthoRH_ZO(c.x - s, c.x + s, c.y - s, c.y + s, -c.z - d, -c.z + d) *
+        view;
+  return true;
+}
+
+// Light matrices for this frame's passes, in the order updateUniforms gathers
+// the lights (view order, MAX_LIGHTS each), so index i here is index i there.
+void RenderPlugin::updateShadowMatrices(entt::registry &reg) {
+  const auto &frame = reg.ctx().get<FrameContext>();
+  sunShadowValid =
+      shadowConfig.enabled &&
+      shadowMatrix(reg, glm::inverse(frame.view)[3], sunViewProj);
+
+  spotShadowCount = pointShadowCount = 0;
+  if (!shadowConfig.localEnabled)
+    return;
+  constexpr float nearPlane = 0.05f;
+  const auto lookFrom = [](glm::vec3 pos, glm::vec3 dir) {
+    const glm::vec3 up =
+        std::abs(dir.y) > 0.99f ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+    return glm::lookAt(pos, pos + dir, up);
+  };
+  for (auto [e, light] : reg.view<SpotLight>().each()) {
+    if (spotShadowCount >= MAX_LIGHTS)
+      break;
+    // direction.w is the outer cone's radius at unit distance = tan(half
+    // angle). A little margin so the 3x3 filter stays inside the map.
+    const float fov = std::clamp(2.0f * std::atan(light.direction.w) * 1.05f,
+                                 glm::radians(1.0f), glm::radians(170.0f));
+    spotViewProj[spotShadowCount++] =
+        glm::perspectiveRH_ZO(fov, 1.0f, nearPlane, shadowConfig.spotFar) *
+        lookFrom(glm::vec3(light.position),
+                 glm::normalize(glm::vec3(light.direction)));
+  }
+  // +X -X +Y -Y +Z -Z: the order pointShadow() picks faces in. 95 degrees,
+  // not 90: the margin keeps filter taps near a face edge on the map instead
+  // of on the border (which reads as lit).
+  static const glm::vec3 cubeFaces[6] = {{1, 0, 0},  {-1, 0, 0}, {0, 1, 0},
+                                         {0, -1, 0}, {0, 0, 1},  {0, 0, -1}};
+  for (auto [e, light] : reg.view<PointLight>().each()) {
+    if (pointShadowCount >= MAX_LIGHTS)
+      break;
+    const glm::mat4 proj = glm::perspectiveRH_ZO(
+        glm::radians(95.0f), 1.0f, nearPlane,
+        std::max(light.position.w, nearPlane * 2.0f));
+    for (int f = 0; f < 6; f++) {
+      pointViewProj[pointShadowCount * 6 + f] =
+          proj * lookFrom(glm::vec3(light.position), cubeFaces[f]);
+    }
+    pointShadowCount++;
+  }
+}
+
+// One depth-only render of every mesh into `view` (cleared to 1 = lit).
+void RenderPlugin::shadowLayerPass(entt::registry &reg, vk::ImageView view,
+                                   uint32_t size, const glm::mat4 *viewProj) {
+  const auto &frame = reg.ctx().get<FrameContext>();
+  const auto &commandBuffer = *frame.commandBuffer;
+  const vk::Extent2D extent{size, size};
+  vk::RenderingAttachmentInfo depthAttachment{
+      .imageView = view,
+      .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+      .loadOp = vk::AttachmentLoadOp::eClear,
+      .storeOp = vk::AttachmentStoreOp::eStore,
+      .clearValue = vk::ClearDepthStencilValue{1.0f, 0}};
+  commandBuffer.beginRendering({.renderArea = {.offset = {0, 0}, .extent = extent},
+                                .layerCount = 1,
+                                .pDepthAttachment = &depthAttachment});
+  if (!viewProj) {
+    commandBuffer.endRendering();
+    return;
+  }
+  commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, float(size),
+                                            float(size), 0.0f, 1.0f));
+  commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+  commandBuffer.setDepthBias(shadowConfig.biasConst, 0.0f,
+                             shadowConfig.biasSlope);
+  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *shadowPipeline);
+  commandBuffer.pushConstants<glm::mat4>(
+      *pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, *viewProj);
+  // ponytail: props aren't drawn here, so they receive shadows but don't
+  // cast them. Casting needs an instanced variant of shadowVert reading
+  // their instance buffers, which are only (re)filled in update().
+  // ponytail: every mesh goes into every layer; cull by light radius/cone if
+  // many point lights make this the bottleneck (each one is 6 full passes).
+  for (auto [entity, meshRef, renderable] :
+       reg.view<MeshRef, Renderable>(entt::exclude<DebugMesh>).each()) {
+    drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
+                   *meshRef.mesh, renderable);
+  }
+  commandBuffer.endRendering();
+}
+
+// Both maps are always cleared and transitioned, even with nothing to draw:
+// every descriptor set names them in the shader-read layout.
+void RenderPlugin::drawShadowPass(entt::registry &reg) {
+  const auto &frame = reg.ctx().get<FrameContext>();
+  const auto &commandBuffer = *frame.commandBuffer;
+  updateShadowMatrices(reg);
+
+  // srcStage covers the previous frame's fragment reads of the same images
+  // (barriers order against everything submitted earlier on the queue).
+  for (vk::Image image : {*shadowImage, *localShadowImage}) {
+    transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined,
+                          vk::ImageLayout::eDepthAttachmentOptimal, {},
+                          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                          vk::PipelineStageFlagBits2::eFragmentShader,
+                          vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                              vk::PipelineStageFlagBits2::eLateFragmentTests,
+                          vk::ImageAspectFlagBits::eDepth);
+  }
+
+  // Cleared even when off; the shader skips it via ubo.shadow.x.
+  shadowLayerPass(reg, *shadowView, shadowSize,
+                  sunShadowValid ? &sunViewProj : nullptr);
+  for (uint32_t i = 0; i < spotShadowCount; i++) {
+    shadowLayerPass(reg, *localShadowLayerViews[i], localShadowSize,
+                    &spotViewProj[i]);
+  }
+  for (uint32_t i = 0; i < pointShadowCount * 6; i++) {
+    shadowLayerPass(reg, *localShadowLayerViews[MAX_LIGHTS + i],
+                    localShadowSize, &pointViewProj[i]);
+  }
+
+  for (vk::Image image : {*shadowImage, *localShadowImage}) {
+    transitionImageLayout(commandBuffer, image,
+                          vk::ImageLayout::eDepthAttachmentOptimal,
+                          vk::ImageLayout::eShaderReadOnlyOptimal,
+                          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                          vk::AccessFlagBits2::eShaderSampledRead,
+                          vk::PipelineStageFlagBits2::eLateFragmentTests,
+                          vk::PipelineStageFlagBits2::eFragmentShader,
+                          vk::ImageAspectFlagBits::eDepth);
+  }
+}
+
 void RenderPlugin::updateUniforms(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
 
@@ -418,6 +767,17 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
   UniformBufferObject ubo{.view = frame.view,
                           .proj = frame.proj,
                           .cameraPos = glm::inverse(frame.view)[3]};
+
+  // The matrices drawShadowPass rendered with this frame; they have to land
+  // in every UBO, so they are set before any upload.
+  if (sunShadowValid) {
+    ubo.lightViewProj = sunViewProj;
+    ubo.shadow = {1.0f, 1.0f / shadowSize, shadowConfig.shaderBias, 0.0f};
+  }
+  std::copy(spotViewProj.begin(), spotViewProj.end(), ubo.spotViewProj);
+  std::copy(pointViewProj.begin(), pointViewProj.end(), ubo.pointViewProj);
+  ubo.localShadow = {float(spotShadowCount), float(pointShadowCount),
+                     1.0f / localShadowSize, shadowConfig.localShaderBias};
 
   // The components are already in UBO layout, so gathering is a plain copy.
   glm::uvec4 &counts = ubo.counts;

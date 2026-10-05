@@ -7,18 +7,12 @@
 
 namespace KR {
 
-// One glTF primitive's slice of the mesh's shared index buffer, plus its own
-// material texture (null if the primitive had none - falls back to whatever
-// texture the entity was spawned with).
 struct SubMesh {
   uint32_t indexOffset = 0;
   uint32_t indexCount = 0;
   std::shared_ptr<Texture> texture;
 };
 
-// Each mesh owns its own buffers so meshes load and unload independently.
-// The price is one bind pair per draw instead of one per frame; a shared arena
-// would buy that back but needs suballocation and defrag to survive unload.
 struct Mesh {
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;

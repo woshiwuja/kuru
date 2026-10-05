@@ -34,7 +34,9 @@ void transitionImageLayout(const vk::raii::CommandBuffer &commandBuffer,
                            .baseMipLevel = 0,
                            .levelCount = 1,
                            .baseArrayLayer = 0,
-                           .layerCount = 1}};
+                           // Every layer: same as 1 for plain images, and
+                           // the shadow map array moves as one.
+                           .layerCount = vk::RemainingArrayLayers}};
   commandBuffer.pipelineBarrier2(vk::DependencyInfo{
       .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier});
 }

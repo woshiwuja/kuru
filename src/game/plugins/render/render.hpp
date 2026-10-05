@@ -29,11 +29,22 @@ struct UniformBufferObject
 	// x: directional, y: point, z: spot. w unused. One uvec4 rather than three
 	// trailing uints, so there is no scalar-offset question at the end.
 	alignas(16) glm::uvec4 counts{0};
+	// Shadow map for dirLights[0]: world -> light clip space, and
+	// x: map valid this frame, y: texel size, z: depth bias.
+	alignas(16) glm::mat4 lightViewProj{1.0f};
+	alignas(16) glm::vec4 shadow{0.0f};
+	// Spot i = layer i of the local array, point i face f = layer
+	// MAX_LIGHTS + 6i + f. localShadow: x/y = spot/point lights rendered,
+	// z = texel size, w = depth bias.
+	alignas(16) glm::mat4 spotViewProj[MAX_LIGHTS];
+	alignas(16) glm::mat4 pointViewProj[MAX_LIGHTS * 6];
+	alignas(16) glm::vec4 localShadow{0.0f};
 };
 // The C++ <-> slang correspondence is maintained by hand, so pin the one
 // number that catches a drift in either file.
 static_assert(sizeof(UniformBufferObject) ==
-                  3 * 64 + 4 * 16 + MAX_LIGHTS * (32 + 32 + 48) + 16,
+                  3 * 64 + 4 * 16 + MAX_LIGHTS * (32 + 32 + 48) + 16 +
+                      64 + 16 + MAX_LIGHTS * 7 * 64 + 16,
               "UniformBufferObject no longer matches its std140 layout");
 
 struct Renderable {
@@ -95,6 +106,44 @@ struct RenderPlugin : Plugin {
 	vk::raii::Pipeline            propPipeline        = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
 
+	// Directional shadow map: depth from dirLights[0], drawn in start() and
+	// sampled by every mesh at binding 2. One image is enough - the barrier in
+	// drawShadowPass waits for the previous frame's reads before rewriting it.
+	static constexpr uint32_t   shadowSize   = 2048;
+	static constexpr vk::Format shadowFormat = vk::Format::eD32Sfloat;
+	vk::raii::Image             shadowImage  = nullptr;
+	vk::raii::DeviceMemory      shadowMemory = nullptr;
+	vk::raii::ImageView         shadowView   = nullptr;
+	vk::raii::Sampler           shadowSampler  = nullptr;
+	vk::raii::Pipeline          shadowPipeline = nullptr;
+	// Spot and point lights share one layered map: spots first, then six
+	// faces per point light (layer layout in UniformBufferObject).
+	static constexpr uint32_t localShadowSize   = 512;
+	static constexpr uint32_t localShadowLayers = MAX_LIGHTS * 7;
+	vk::raii::Image                  localShadowImage     = nullptr;
+	vk::raii::DeviceMemory           localShadowMemory    = nullptr;
+	vk::raii::ImageView              localShadowArrayView = nullptr; // sampled
+	std::vector<vk::raii::ImageView> localShadowLayerViews;          // rendered
+	// Computed in start() for the passes, copied into every UBO in update(),
+	// so the shader always compares against the matrices the maps used.
+	bool                                     sunShadowValid = false;
+	glm::mat4                                sunViewProj{1.0f};
+	std::array<glm::mat4, MAX_LIGHTS>        spotViewProj{};
+	std::array<glm::mat4, MAX_LIGHTS * 6>    pointViewProj{};
+	uint32_t                                 spotShadowCount  = 0;
+	uint32_t                                 pointShadowCount = 0;
+	struct ShadowConfig {
+		bool  enabled     = true;
+		float halfExtent  = 30.0f;  // box half-width around the camera, metres
+		float depthRange  = 200.0f; // box half-depth along the light
+		float biasConst   = 1.25f;  // rasterizer depth bias, in depth units
+		float biasSlope   = 1.75f;  // ...scaled by the triangle's slope
+		float shaderBias  = 0.0005f;
+		bool  localEnabled    = true;   // spot + point lights
+		float spotFar         = 50.0f;  // spots have no range, so the map needs one
+		float localShaderBias = 0.0002f;
+	} shadowConfig;
+
 	// GPU resources of despawned entities, kept until every frame that could
 	// reference them has retired. Declared after descriptorPool so the sets go
 	// first on destruction.
@@ -117,6 +166,14 @@ struct RenderPlugin : Plugin {
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
 	void createDescriptorPool();
+	void createShadowResources();
+	void drawShadowPass(entt::registry &reg);
+	// lightViewProj for dirLights[0], centred on `center`; false if no light.
+	bool shadowMatrix(entt::registry &reg, glm::vec3 center, glm::mat4 &out) const;
+	void updateShadowMatrices(entt::registry &reg);
+	// viewProj == nullptr: clear only.
+	void shadowLayerPass(entt::registry &reg, vk::ImageView view, uint32_t size,
+	                     const glm::mat4 *viewProj);
 	[[nodiscard]] vk::raii::ShaderModule
 	createShaderModule(const std::vector<char> &code) const;
 
