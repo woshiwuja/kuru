@@ -86,10 +86,7 @@ float4 prepassFrag(float3 worldPos, float3 worldNormal) : SV_Target {
 [[vk::binding(2, 0)]] SamplerState gbufferSampler;
 
 struct OutlinePush {
-    float2 iResolution;
-    // The original's scene was ~5 world units across, so its raw distance deltas
-    // landed either side of the 0.5 threshold below. Rescale here rather than
-    // retuning the threshold. Nothing is measured; nudge it to taste.
+  float2 iResolution;
     float distScale;
     float strength;
 };
@@ -143,9 +140,18 @@ float2 getDeltas(float2 uv) {
 }
 
 [shader("fragment")]
-float4 outlineFrag(float4 svPosition : SV_Position) : SV_Target {
-    float2 deltas = getDeltas(svPosition.xy / pc.iResolution);
-    // The original's `col -= deltas.x - deltas.y`. The blend does the subtract;
-    // alpha is 0 so the reverse-subtract leaves the frame's alpha alone.
-    return float4(((deltas.x - deltas.y) * pc.strength).xxx, 0.0);
+float4 outlineFrag(float4 svPosition: SV_Position) : SV_Target {
+  // 4 sub-pixel samples of the edge detector, averaged: the threshold in
+  // getDeltas is near-binary, so one sample per pixel gives hard 1-pixel
+  // steps. Averaging turns a pixel half-covered by an edge into a half-strength
+  // one. Rotated grid, like 4x MSAA.
+  // ponytail: 4x the taps (32), fine fullscreen; drop to 2 offsets if it
+  // ever shows up in a profile.
+  float2 uv = svPosition.xy / pc.iResolution;
+  float2 pixel = 1.0 / pc.iResolution;
+  float2 deltas = (getDeltas(uv + pixel * float2(-0.125, -0.375)) +
+                   getDeltas(uv + pixel * float2(0.375, -0.125)) +
+                   getDeltas(uv + pixel * float2(0.125, 0.375)) +
+                   getDeltas(uv + pixel * float2(-0.375, 0.125))) * 0.25;
+  return float4(((deltas.x - deltas.y) * pc.strength).xxx, 0.0);
 }

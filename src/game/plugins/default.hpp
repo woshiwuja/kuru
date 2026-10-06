@@ -32,7 +32,7 @@ struct DefaultPlugin : public Plugin {
     t.scale = glm::vec3{1, 1, 1};
     using namespace JPH::literals;
     auto &bodySettings = reg.emplace<JPH::BodyCreationSettings>(
-        e, new JPH::SphereShape(1.0f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
+        e, new JPH::CapsuleShape(1.0f, 0.5f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
         JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     spawn(reg, e, "models/spongebob.glb", "");

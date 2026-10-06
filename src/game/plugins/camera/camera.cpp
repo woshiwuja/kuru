@@ -46,9 +46,10 @@ void CameraPlugin::update(entt::registry &reg) {
 void Camera::control(FrameContext &frame){
     const auto *core = Core::get();
     const auto &input = *core->eventManager;
-    const float dt = core->deltaTime();
+    const bool frozen = core->frozen;
+    const float dt = core->realDeltaTime(); // the camera still moves while paused
     const bool orbiting =
-        input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse;
+        !frozen && input.down(SDL_BUTTON_MIDDLE) && !frame.uiCapturesMouse;
     if (orbiting) {
       yaw += input.mouseDeltaX * orbitSensitivity;
       pitch -= input.mouseDeltaY * orbitSensitivity;
@@ -59,7 +60,7 @@ void Camera::control(FrameContext &frame){
     // back mid-orbit. This also pins the pointer, so a long drag no longer
     // walks it off to the screen edge.
     SDL_SetWindowRelativeMouseMode(core->window->window, orbiting);
-    const bool keyboardFree = !frame.uiCapturesKeyboard;
+    const bool keyboardFree = !frozen && !frame.uiCapturesKeyboard;
     if (keyboardFree && input.down(SDL_SCANCODE_Q)) {
       yaw -= turnSpeed * dt;
     }
@@ -68,7 +69,7 @@ void Camera::control(FrameContext &frame){
     }
     pitch = std::clamp(pitch, -89.0f, 89.0f);
 
-    if (!frame.uiCapturesMouse) {
+    if (!frozen && !frame.uiCapturesMouse) {
       distance *= 1.0f - input.wheel * zoomSpeed;
     }
     distance =
