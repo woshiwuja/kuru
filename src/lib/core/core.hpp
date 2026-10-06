@@ -11,6 +11,7 @@
 #include <vulkan/vulkan_profiles.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include "../physics/physics.hpp"
+#include "../settings/settings.hpp"
 
 namespace KR {
 
@@ -23,10 +24,6 @@ struct AppInfo {
 // with that subsystem: uploads on Device, images in image/, meshes in model/,
 // the pipeline and per-entity state in the render plugin.
 struct Core {
-  // Declaration order IS destruction order, reversed, and it has to match
-  // creation order: the instance must outlive the device, the device must
-  // outlive everything it made. cleanup() does this explicitly on the normal
-  // path, but an exception during init() unwinds straight through here.
   bool running = false;
   std::unique_ptr<Window> window = nullptr;
   std::unique_ptr<EventManager> eventManager = nullptr;
@@ -36,22 +33,21 @@ struct Core {
   vk::raii::Instance instance = nullptr;
   std::unique_ptr<Device> device = nullptr;
   std::unique_ptr<Graphics> graphics = nullptr;
+  std::unique_ptr<Settings> settings = nullptr;
   Core();
   ~Core();
-
-  // The live Core. main() owns it as a local, this only borrows a pointer, so
-  // calling get() before that local is constructed or after it dies is a bug.
   static Core *get();
-
   void init();
   void run();
   void end();
 
   static Core *s_instance;
   bool paused = false;
+  bool frozen = false;
   float deltaTime() const {
     return paused ? 0.0f : dt; 
   }
+  float realDeltaTime() const { return dt; }
   float deltaTime(float scale) const {
     return paused ? 0.0f : dt* scale; 
   }
@@ -71,7 +67,6 @@ struct Core {
   void initPhysics();
   void initGui();
   void shutdownGui();
-  void mainLoop();
   void cleanup();
   void createInstance();
   void createCommandBuffers();
@@ -80,7 +75,7 @@ struct Core {
   [[nodiscard]] std::vector<const char *> getRequiredInstanceExtensions() const;
   [[nodiscard]] bool checkValidationLayerSupport() const;
   void save(const char* path);
-  void load(const char* path); // queued: runs between frames, see mainLoop
+  void load(const char* path);
   std::string pendingLoad;
   void loadNow(const char* path);
   private:

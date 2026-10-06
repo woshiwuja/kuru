@@ -1,13 +1,37 @@
-#include <vulkan/vulkan_profiles.hpp>
+#pragma once
+#include <cstdint>
+#include <string>
+#include "../window/window.hpp"
+
 namespace KR {
-    enum WindowMode {
-        windowed = 0,
-        fullscreen = 1,
-        borderless = 2
-    };
-    struct Settings {
-        uint window_mode = 0;
-        uint width = 1920;
-        uint height = 1080;
-    };
-}
+enum Quality { off = 0, low = 1, medium = 2, high = 3 };
+
+struct Settings {
+  struct General {
+  } general;
+
+  struct Gameplay {
+  } gameplay;
+
+  struct Video {
+    Window window{.width = 1920, .height = 1080}; 
+    struct Graphics {
+      struct Textures {
+        Quality quality = medium;
+      } textures;
+      struct Shadows {
+        Quality quality = medium;
+      } shadows;
+    } graphics;
+  } video;
+
+  struct Audio {
+    uint32_t master_volume = 100; 
+    uint32_t sound_effects_volume = 100;
+    uint32_t music_volume = 100;
+    std::string output_device; 
+  } audio;
+  void load(const std::string &path);
+  void save(const std::string &path) const;
+};
+} // namespace KR

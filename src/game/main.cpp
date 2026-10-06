@@ -18,6 +18,7 @@
 #include "plugins/picking/picking.hpp"
 #include "plugins/default.hpp"
 #include "plugins/pausing/pausing.hpp"
+#include "plugins/settings/settings.hpp"
 #include "plugins/save/save.hpp"
 #include "plugins/physics/physics.hpp"
 #include <cstdio>
@@ -53,6 +54,7 @@ int main()
 		app.addPlugin(std::make_unique<ModelPlugin>());
 		app.addPlugin(std::make_unique<PickingPlugin>()); // after TransformPlugin: see update()
 		app.addPlugin(std::make_unique<SavePlugin>()); // before PausingPlugin: it reads SaveMenu
+		app.addPlugin(std::make_unique<SettingsPlugin>()); // before PausingPlugin: it reads SettingsMenu
 		app.addPlugin(std::make_unique<PausingPlugin>());
 		app.init();
 		app.run();

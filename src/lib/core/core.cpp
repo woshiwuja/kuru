@@ -45,6 +45,8 @@ Core::Core() {
   sync = std::make_unique<Sync>();
   std::cerr << "[debug] Core::Core: making PhysicsManager\n" << std::flush;
   physicsManager = std::make_unique<PhysicsManager>();
+  std::cerr << "[debug] Load settings\n" << std::flush;
+  settings = std::make_unique<Settings>();
   std::cerr << "[debug] Core::Core: done\n" << std::flush;
 }
 
@@ -59,6 +61,7 @@ Core *Core::get() {
 }
 
 void Core::init() {
+  settings->load(assetPath("settings.json"));
   std::cerr << "[debug] Core::init: initVulkan\n" << std::flush;
   initVulkan();
   std::cerr << "[debug] Core::init: initGui\n" << std::flush;
@@ -71,8 +74,6 @@ void Core::init() {
   running = true;
 }
 
-void Core::run() { mainLoop(); }
-
 void Core::end() {
   cleanup();
   window->quit();
@@ -80,6 +81,9 @@ void Core::end() {
 
 void Core::initVulkan() {
   std::cerr << "[debug] initVulkan: window->init\n" << std::flush;
+  window->width = settings->video.window.width;
+  window->height = settings->video.window.height;
+  window->mode = settings->video.window.mode;
   window->init();
   std::cerr << "[debug] initVulkan: createInstance\n" << std::flush;
   createInstance();
@@ -186,7 +190,7 @@ void Core::initECS() {
   }
 }
 
-void Core::mainLoop() {
+void Core::run() {
   while (running) {
     eventManager->pump();
     running = !eventManager->quit;
@@ -399,17 +403,12 @@ void Core::drawFrame() {
       .pSwapchains = &*graphics->swapChain,
       .pImageIndices = &imageIndex};
   result = device->queue.presentKHR(presentInfoKHR);
-  // Due to VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS being defined,
-  // eErrorOutOfDateKHR can be checked as a result here and does not need to
-  // be caught by an exception.
   if ((result == vk::Result::eSuboptimalKHR) ||
       (result == vk::Result::eErrorOutOfDateKHR) ||
       graphics->framebufferResized) {
     graphics->framebufferResized = false;
     graphics->recreateSwapChain();
   } else {
-    // There are no other success codes than eSuccess; on any error code,
-    // presentKHR already threw an exception.
     assert(result == vk::Result::eSuccess);
   }
   sync->frameIndex = (sync->frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;

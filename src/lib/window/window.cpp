@@ -11,9 +11,34 @@ namespace KR {
 void Window::init() {
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
   window = SDL_CreateWindow(title.c_str(), width, height,
-                            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+                            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | modeToSDL(mode) );
+  apply(); 
   setCursor("cursors/green.cur");
 }
+void Window::apply() {
+  if (mode == windowed) {
+    SDL_SetWindowFullscreen(window, false);
+    SDL_SetWindowSize(window, width, height);
+    return;
+  }
+  if (mode == borderless) {
+    SDL_SetWindowFullscreenMode(window, nullptr);
+    SDL_SetWindowFullscreen(window, true);
+    return;
+  }
+  SDL_DisplayMode closest{};
+  if (SDL_GetClosestFullscreenDisplayMode(SDL_GetDisplayForWindow(window),
+                                          width, height, 0.0f, true,
+                                          &closest)) {
+    SDL_SetWindowFullscreenMode(window, &closest);
+  } else {
+    std::cerr << "[warn] Window::apply: no " << width << "x" << height
+              << " display mode, using desktop: " << SDL_GetError() << '\n';
+    SDL_SetWindowFullscreenMode(window, nullptr);
+  }
+  SDL_SetWindowFullscreen(window, true);
+}
+
 void Window::quit() {
   SDL_SetCursor(SDL_GetDefaultCursor());
   SDL_DestroyCursor(cursor);
@@ -33,6 +58,6 @@ void Window::setCursor(const char *path) {
       (int)SDL_GetNumberProperty(props, SDL_PROP_SURFACE_HOTSPOT_Y_NUMBER, 0));
   SDL_DestroySurface(s);
   SDL_SetCursor(cursor);
-  SDL_DestroyCursor(previous); // after SDL_SetCursor: destroying the live one is UB
+  SDL_DestroyCursor(previous);
 }
 } // namespace KR
