@@ -73,6 +73,7 @@ void Settings::load(const std::string &path) {
     const json &gfx = child(child(j, "video"), "graphics");
     readQuality(child(gfx, "textures"), video.graphics.textures.quality);
     readQuality(child(gfx, "shadows"), video.graphics.shadows.quality);
+    read(gfx, "vsync", video.graphics.vsync);
 
     const json &a = child(j, "audio");
     read(a, "master_volume", audio.master_volume);
@@ -95,7 +96,8 @@ void Settings::save(const std::string &path) const {
           {"height", video.window.height}}},
         {"graphics",
          {{"textures", {{"quality", qualityName(video.graphics.textures.quality)}}},
-          {"shadows", {{"quality", qualityName(video.graphics.shadows.quality)}}}}}}},
+          {"shadows", {{"quality", qualityName(video.graphics.shadows.quality)}}},
+          {"vsync", video.graphics.vsync}}}}},
       {"audio",
        {{"master_volume", audio.master_volume},
         {"sound_effects_volume", audio.sound_effects_volume},

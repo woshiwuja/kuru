@@ -242,8 +242,11 @@ struct RenderPlugin : Plugin {
 	void despawn(entt::registry &reg, entt::entity entity);
 	// The instanced batch props with `mesh` draw through, created on first use
 	// (`texture` is only read then).
+	// `material`: the entity's own, when it has one, so turning a mesh into a
+	// prop keeps its colour/metallic/roughness. Null = a plain one on `texture`.
 	PropBatch &propBatch(const std::shared_ptr<Mesh> &mesh,
-	                     const std::shared_ptr<Texture> &texture);
+	                     const std::shared_ptr<Texture> &texture,
+	                     std::shared_ptr<Material> material = nullptr);
 
 	[[nodiscard]] Renderable makeRenderable(const Mesh &mesh,
 	                                        const std::shared_ptr<Texture> &texture);

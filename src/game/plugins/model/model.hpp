@@ -54,11 +54,14 @@ struct ModelPlugin : public Plugin {
       const auto &mesh = r.get<MeshRef>(e).mesh;
       if (!render.propBatches.contains(mesh.get())) {
         std::shared_ptr<Texture> texture = getTexture(r, "");
-        const auto *ref = r.try_get<MaterialRef>(e);
-        if (ref && ref->material->baseColor) {
-          texture = ref->material->baseColor;
+        std::shared_ptr<Material> material;
+        if (const auto *ref = r.try_get<MaterialRef>(e)) {
+          if (ref->material->baseColor) {
+            texture = ref->material->baseColor;
+          }
+          material = ref->material;
         }
-        render.propBatch(mesh, texture);
+        render.propBatch(mesh, texture, material);
       }
       r.get_or_emplace<Transform>(e);
       if (auto *own = r.try_get<Renderable>(e)) {

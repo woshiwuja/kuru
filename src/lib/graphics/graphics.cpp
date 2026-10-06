@@ -3,6 +3,7 @@
 #include "SDL3/SDL_video.h"
 #include "SDL3/SDL_vulkan.h"
 #include <vulkan/vulkan_core.h>
+#include <algorithm>
 
 namespace KR {
 void Graphics::init() { createSurface(); }
@@ -39,6 +40,22 @@ void Graphics::createSwapChain(){
           pd.getSurfaceFormatsKHR(*surface);
       chooseSwapSurfaceFormat(availableFormats);
 
+      // vsync: FIFO blocks on the refresh instead of throwing frames away
+      // like mailbox did, and it's the one mode the spec guarantees exists.
+      // Off: immediate (tears, lowest latency), else mailbox, else FIFO anyway.
+      vk::PresentModeKHR presentMode = vk::PresentModeKHR::eFifo;
+      if (!core->settings->video.graphics.vsync) {
+        const auto modes = pd.getSurfacePresentModesKHR(*surface);
+        const auto has = [&modes](vk::PresentModeKHR m) {
+          return std::ranges::find(modes, m) != modes.end();
+        };
+        if (has(vk::PresentModeKHR::eImmediate)) {
+          presentMode = vk::PresentModeKHR::eImmediate;
+        } else if (has(vk::PresentModeKHR::eMailbox)) {
+          presentMode = vk::PresentModeKHR::eMailbox;
+        }
+      }
+
       vk::SwapchainCreateInfoKHR swapChainCreateInfo{
           .surface = *surface,
           .minImageCount = swapMinImageCount,
@@ -50,9 +67,7 @@ void Graphics::createSwapChain(){
           .imageSharingMode = vk::SharingMode::eExclusive,
           .preTransform = capabilities.currentTransform,
           .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-          // vsync: FIFO blocks on the refresh instead of throwing frames away
-          // like mailbox did, and it's the one mode the spec guarantees exists.
-          .presentMode = vk::PresentModeKHR::eFifo,
+          .presentMode = presentMode,
           .clipped = true};
 
       swapChain = vk::raii::SwapchainKHR(core->device->device, swapChainCreateInfo);

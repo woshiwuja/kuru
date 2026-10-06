@@ -71,8 +71,12 @@ struct PickingPlugin : public Plugin {
         best = e;
       }
     }
-    r.clear<Selected>();
-    if (best != entt::null)
+    // Ctrl: toggle the hit into the selection, keep it on a miss.
+    if (!ImGui::GetIO().KeyCtrl) {
+      r.clear<Selected>();
+    }
+    if (best != entt::null && r.remove<Selected>(best) == 0) {
       r.emplace<Selected>(best);
+    }
   }
 };

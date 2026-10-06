@@ -22,6 +22,7 @@ struct Settings {
       struct Shadows {
         Quality quality = medium;
       } shadows;
+      bool vsync = true;
     } graphics;
   } video;
 

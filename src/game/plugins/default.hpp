@@ -37,10 +37,14 @@ struct DefaultPlugin : public Plugin {
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
     spawn(reg, e, "models/spongebob.glb", "");
     reg.emplace<Pickable>(e);
-    auto prop = reg.create();
-    spawnProp(reg, prop, "models/default_item.glb", "",
-              Transform{.position = {3.0, 100, 3.0},.scale= {.1,.1,.1}});
-    reg.emplace<Pickable>(prop);
+    for (auto i = 0; i<=100; i++ ){
+        for (auto j = 0; j<=100; j++ ){
+        auto prop = reg.create();
+        spawnProp(reg, prop, "primitive:cube", "",
+                  Transform{.position = {3.0+i+.5, 20, 3.0+j+.5},.scale= {1,1,1}});
+        reg.emplace<Pickable>(prop);
+        }
+    }
   };
   void update(entt::registry &reg) override {}
 };

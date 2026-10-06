@@ -370,12 +370,15 @@ void RenderPlugin::spawnProp(entt::registry &reg, entt::entity entity,
 }
 
 PropBatch &RenderPlugin::propBatch(const std::shared_ptr<Mesh> &mesh,
-                                   const std::shared_ptr<Texture> &texture) {
+                                   const std::shared_ptr<Texture> &texture,
+                                   std::shared_ptr<Material> material) {
   auto [it, fresh] = propBatches.try_emplace(mesh.get());
   if (fresh) {
     it->second.mesh = mesh;
-    it->second.material =
-        std::make_shared<Material>(Material{.baseColor = texture});
+    if (!material) {
+      material = std::make_shared<Material>(Material{.baseColor = texture});
+    }
+    it->second.material = std::move(material);
     it->second.renderable = makeRenderable(*mesh, texture);
   }
   return it->second;

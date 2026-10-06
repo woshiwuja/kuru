@@ -10,7 +10,8 @@
         "graphics":
             {
             "textures":{"quality":"medium"},
-            "shadows":{"quality":"medium"}
+            "shadows":{"quality":"medium"},
+            "vsync":true
             }
     },
     "audio": {

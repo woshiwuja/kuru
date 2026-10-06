@@ -111,6 +111,10 @@ struct SettingsPlugin : public Plugin {
     ImGui::SeparatorText("Graphics");
     quality("Textures", v.graphics.textures.quality);
     quality("Shadows", v.graphics.shadows.quality);
+    if (ImGui::Checkbox("VSync", &v.graphics.vsync)) {
+      // The swapchain picks its present mode on creation: rebuild it.
+      Core::get()->graphics->framebufferResized = true;
+    }
     return changed;
   }
 

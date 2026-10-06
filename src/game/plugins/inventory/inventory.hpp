@@ -9,12 +9,11 @@ struct Inventory {
   uint32_t height = 50;
 };
 struct InventoryPlugin : public KR::Plugin {
-    InventoryPlugin() {
-        registerComponent<Inventory>();
-    }
+  InventoryPlugin() { registerComponent<Inventory>(); }
   void update(entt::registry &r) override {
     using namespace ImGui;
-    if (r.storage<Selected>().empty()) return;
+    if (r.storage<Selected>().empty())
+      return;
     ImGuiStorage *state = GetStateStorage();
     const ImGuiID openId = GetID("inventory open");
     bool open = state->GetBool(openId, false);
@@ -23,15 +22,16 @@ struct InventoryPlugin : public KR::Plugin {
     if (!frame.uiCapturesKeyboard && event->pressed(SDL_SCANCODE_I)) {
       open = !open;
     }
-    if (open){UI(r, open);}
+    if (open) {
+      UI(r, open);
+    }
     state->SetBool(openId, open);
   }
   void UI(entt::registry &r, bool &open) {
     using namespace ImGui;
     if (Begin("Inventory", &open)) {
-    for (auto [e, inventory] : r.view<Selected, Inventory>().each()) {
-
-    }
+      for (auto [e, inventory] : r.view<Selected, Inventory>().each()) {
+      }
     }
     End();
   };

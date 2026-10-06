@@ -9,7 +9,7 @@
 using namespace KR;
 
 constexpr auto cube = "primitive:cube";
-constexpr auto sphere = "primitive:cube";
+constexpr auto sphere = "primitive:sphere";
 struct MeshLoader {
   using result_type = std::shared_ptr<Mesh>;
 
