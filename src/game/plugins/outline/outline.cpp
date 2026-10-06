@@ -5,8 +5,6 @@
 using namespace KR;
 
 void OutlinePlugin::init(entt::registry &reg) {
-  // The prepass borrows the mesh pipeline layout and per-entity descriptor
-  // sets, so RenderPlugin has to be registered (and initialised) before this.
   render = &renderer(reg);
   createNormalPipeline();
   createOutlineDescriptorSetLayout();
@@ -14,25 +12,18 @@ void OutlinePlugin::init(entt::registry &reg) {
   createOutlineDescriptorSet();
 }
 
-// The normal/distance prepass renders into its own target, so it needs its own
-// pass - and a pass can't be opened inside the one Core has already begun.
-// start() is the only hook that runs outside it.
 void OutlinePlugin::start(entt::registry &reg) { drawNormalPrepass(reg); }
 
-// Last in the pass: it darkens whatever the sky and the meshes left behind,
-// which registration order after RenderPlugin gives us.
 void OutlinePlugin::update(entt::registry &reg) {
-    drawOutline(reg);
+    if (enabled) {
+      drawOutline(reg);
+    }
     ImGui::Begin("Outline");
+    ImGui::Checkbox("Enabled", &enabled);
     ImGui::DragFloat("distance", &outlinePush.distScale, 0.01, 0.01, 1);
     ImGui::DragFloat("strenght", &outlinePush.strength);
     ImGui::End();
 }
-
-// ---- outline ----------------------------------------------------------------
-// assets/shaders/outline.slang, in two halves: a prepass that writes world
-// normal + view distance into graphics->normalImage, and a fullscreen triangle
-// that samples it and subtracts the discontinuities it finds from the frame.
 
 void OutlinePlugin::createNormalPipeline() {
   auto core = Core::get();
@@ -64,10 +55,8 @@ void OutlinePlugin::createNormalPipeline() {
       .cullMode = vk::CullModeFlagBits::eBack,
       .frontFace = vk::FrontFace::eCounterClockwise,
       .lineWidth = 1.0f};
-  // 1x, matching the target: see Graphics::createNormalResources.
   vk::PipelineMultisampleStateCreateInfo multisampling{
       .rasterizationSamples = vk::SampleCountFlagBits::e1};
-  // Same reversed-Z convention as the main pass.
   vk::PipelineDepthStencilStateCreateInfo depthStencil{
       .depthTestEnable = vk::True,
       .depthWriteEnable = vk::True,
@@ -88,9 +77,6 @@ void OutlinePlugin::createNormalPipeline() {
   vk::Format depthFormat = core->graphics->findDepthFormat();
   vk::Format colorFormat = Graphics::normalFormat;
 
-  // No layout of its own: prepassVert/prepassFrag read the same UBO at binding
-  // 0 that the mesh shader does, so the mesh layout and its per-entity
-  // descriptor sets are bound unchanged.
   vk::StructureChain<vk::GraphicsPipelineCreateInfo,
                      vk::PipelineRenderingCreateInfo>
       chain = {{.stageCount = 2,
@@ -115,9 +101,6 @@ void OutlinePlugin::createNormalPipeline() {
 }
 
 void OutlinePlugin::createOutlineDescriptorSetLayout() {
-  // Matches the explicit [[vk::binding(...)]] indices in outline.slang:
-  // 1 = gbuffer (Texture2D), 2 = gbufferSampler. Binding 0 there is the
-  // prepass's UBO, which this half of the file never reads.
   std::array bindings = {
       vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eSampledImage, 1,
                                      vk::ShaderStageFlagBits::eFragment,

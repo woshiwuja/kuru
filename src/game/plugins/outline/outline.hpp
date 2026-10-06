@@ -36,6 +36,7 @@ struct OutlinePlugin : Plugin {
 	// but the view is recreated on resize, so track which one it was written for.
 	vk::ImageView                 outlineBoundView           = nullptr;
 	OutlinePushConstants          outlinePush;
+	bool                          enabled = false;
 
 	void init(entt::registry &reg) override;
 	// Outside the main pass, unlike update().

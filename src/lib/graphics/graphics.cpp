@@ -290,8 +290,8 @@ void Graphics::createTextureSampler() {
 void Graphics::createGbufferSampler() {
     const auto &device = Core::Core::get()->device;
     vk::SamplerCreateInfo samplerInfo{
-        .magFilter = vk::Filter::eNearest,
-        .minFilter = vk::Filter::eNearest,
+        .magFilter = vk::Filter::eLinear,
+        .minFilter = vk::Filter::eLinear,
         .mipmapMode = vk::SamplerMipmapMode::eNearest,
         .addressModeU = vk::SamplerAddressMode::eClampToEdge,
         .addressModeV = vk::SamplerAddressMode::eClampToEdge,
