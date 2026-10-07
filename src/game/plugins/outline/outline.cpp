@@ -12,7 +12,13 @@ void OutlinePlugin::init(entt::registry &reg) {
   createOutlineDescriptorSet();
 }
 
-void OutlinePlugin::start(entt::registry &reg) { drawNormalPrepass(reg); }
+// Disabled: the G-buffer is only read by drawOutline, so skip filling it. A
+// re-enable takes effect next frame, after this has run again.
+void OutlinePlugin::start(entt::registry &reg) {
+  if (enabled) {
+    drawNormalPrepass(reg);
+  }
+}
 
 void OutlinePlugin::update(entt::registry &reg) {
     if (enabled) {

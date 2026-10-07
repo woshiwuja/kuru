@@ -302,6 +302,12 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
   }
 
   vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+  // The multisample image is dead once resolved; only the swapchain image
+  // (the resolve target) has to be written back.
+  vk::AttachmentStoreOp colorStore = vk::AttachmentStoreOp::eStore;
+  if (msaa) {
+    colorStore = vk::AttachmentStoreOp::eDontCare;
+  }
   // With MSAA the pass draws into the multisample image and resolves into the
   // swapchain image on endRendering; without it, straight into the swapchain.
   vk::RenderingAttachmentInfo attachmentInfo = {
@@ -315,7 +321,7 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
       .resolveImageLayout = msaa ? vk::ImageLayout::eColorAttachmentOptimal
                                  : vk::ImageLayout::eUndefined,
       .loadOp = vk::AttachmentLoadOp::eClear,
-      .storeOp = vk::AttachmentStoreOp::eStore,
+      .storeOp = colorStore,
       .clearValue = clearColor};
   // Reversed-Z (see camera.cpp): 0 is the far plane, so that's the "nothing
   // drawn yet" value now, not 1.

@@ -669,9 +669,17 @@ bool RenderPlugin::shadowMatrix(entt::registry &reg, glm::vec3 center,
 // the lights (view order, MAX_LIGHTS each), so index i here is index i there.
 void RenderPlugin::updateShadowMatrices(entt::registry &reg) {
   const auto &frame = reg.ctx().get<FrameContext>();
+  // Centred halfExtent ahead of the camera, not on it: the box then spans
+  // from the camera to 2 * halfExtent along the view, which is what's on
+  // screen. Centred on the camera, half of it was behind and a distant view
+  // got no shadows at all.
+  const glm::mat4 cameraWorld = glm::inverse(frame.view);
+  const glm::vec3 forward = -glm::normalize(glm::vec3(cameraWorld[2]));
   sunShadowValid =
       shadowConfig.enabled &&
-      shadowMatrix(reg, glm::inverse(frame.view)[3], sunViewProj);
+      shadowMatrix(reg,
+                   glm::vec3(cameraWorld[3]) + forward * shadowConfig.halfExtent,
+                   sunViewProj);
 
   spotShadowCount = pointShadowCount = 0;
   if (!shadowConfig.localEnabled)

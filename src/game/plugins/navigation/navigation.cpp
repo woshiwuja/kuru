@@ -337,6 +337,52 @@ bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
 
 } // namespace
 
+std::vector<glm::vec3> findPath(const NavMap &nav, glm::vec3 from,
+                                glm::vec3 to) {
+  if (nav.query == nullptr) {
+    return {};
+  }
+  constexpr int maxPolys = 256;
+  // Generous in Y: `from` is a body's centre, not its feet.
+  const float extents[3] = {2.0f, 4.0f, 2.0f};
+  dtQueryFilter filter;
+  filter.setIncludeFlags(NAV_POLY_WALK);
+  dtPolyRef startRef = 0, endRef = 0;
+  float start[3], end[3];
+  if (dtStatusFailed(nav.query->findNearestPoly(&from.x, extents, &filter,
+                                                &startRef, start)) ||
+      startRef == 0 ||
+      dtStatusFailed(nav.query->findNearestPoly(&to.x, extents, &filter,
+                                                &endRef, end)) ||
+      endRef == 0) {
+    return {};
+  }
+  dtPolyRef polys[maxPolys];
+  int polyCount = 0;
+  if (dtStatusFailed(nav.query->findPath(startRef, endRef, start, end, &filter,
+                                         polys, &polyCount, maxPolys)) ||
+      polyCount == 0) {
+    return {};
+  }
+  // Partial path (unreachable, or longer than maxPolys): stop on its last
+  // poly instead of walking at a wall.
+  if (polys[polyCount - 1] != endRef) {
+    nav.query->closestPointOnPoly(polys[polyCount - 1], end, end, nullptr);
+  }
+  float corners[3 * maxPolys];
+  int cornerCount = 0;
+  if (dtStatusFailed(nav.query->findStraightPath(start, end, polys, polyCount,
+                                                 corners, nullptr, nullptr,
+                                                 &cornerCount, maxPolys))) {
+    return {};
+  }
+  std::vector<glm::vec3> points;
+  for (int i = 0; i < cornerCount; i++) {
+    points.emplace_back(corners[3 * i], corners[3 * i + 1], corners[3 * i + 2]);
+  }
+  return points;
+}
+
 void NavigationPlugin::start(entt::registry &reg) {
   if (rebuildRequested) {
     rebuildRequested = false;

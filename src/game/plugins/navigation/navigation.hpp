@@ -116,6 +116,12 @@ struct NavMap {
   }
 };
 
+// Corner points of the path from `from` to `to` on `nav` (world space, on
+// the mesh surface), ending at `to` snapped onto the mesh, or at the nearest
+// reachable point if `to` can't be reached. Empty if either end is off it.
+std::vector<glm::vec3> findPath(const NavMap &nav, glm::vec3 from,
+                                glm::vec3 to);
+
 // Tag: NavigationPlugin builds a NavMeshRef from this entity's MeshRef.
 struct Walkable {};
 

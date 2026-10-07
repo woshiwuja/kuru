@@ -23,8 +23,11 @@ struct MapPlugin : public Plugin {
     MapPlugin() { registerComponent<Map>(); }
     void init(entt::registry &reg)override{
         const std::string mapPath = "models/testmap.glb";
+        // The heightfield is built in raw mesh units; PhysicsPlugin scales the
+        // shape from this Transform, so the map resizes from one place.
+        constexpr float mapScale = 100.0f;
         entt::entity mapEntity = reg.create();
-		reg.emplace<Transform>(mapEntity);
+		reg.emplace<Transform>(mapEntity, Transform{.scale = glm::vec3(mapScale)});
 		reg.emplace<ModelPath>(mapEntity, mapPath);
 		reg.emplace<TexturePath>(mapEntity, "textures/viking_room.ktx2");
 		reg.emplace<Map>(mapEntity, mapPath);
