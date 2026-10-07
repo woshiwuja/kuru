@@ -22,7 +22,23 @@ void RenderPlugin::init(entt::registry &reg) {
   createDescriptorSetLayout();
   createGraphicsPipeline();
   createDescriptorPool();
-  createShadowResources(); // before any makeRenderable: it binds the map
+  // Both before any makeRenderable: it binds the maps and the frame buffers.
+  createShadowResources();
+  createFrameUniforms();
+}
+
+void RenderPlugin::createFrameUniforms() {
+  for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    vk::raii::Buffer buffer = nullptr;
+    vk::raii::DeviceMemory memory = nullptr;
+    createBuffer(sizeof(FrameUniforms), vk::BufferUsageFlagBits::eUniformBuffer,
+                 vk::MemoryPropertyFlagBits::eHostVisible |
+                     vk::MemoryPropertyFlagBits::eHostCoherent,
+                 buffer, memory);
+    frameUniformsMapped.push_back(memory.mapMemory(0, sizeof(FrameUniforms)));
+    frameUniforms.emplace_back(std::move(buffer));
+    frameUniformsMemory.emplace_back(std::move(memory));
+  }
 }
 
 void RenderPlugin::createDescriptorSetLayout() {
@@ -41,7 +57,12 @@ void RenderPlugin::createDescriptorSetLayout() {
           vk::ShaderStageFlagBits::eFragment, nullptr),
       vk::DescriptorSetLayoutBinding(
           3, vk::DescriptorType::eCombinedImageSampler, 1,
-          vk::ShaderStageFlagBits::eFragment, nullptr)};
+          vk::ShaderStageFlagBits::eFragment, nullptr),
+      // FrameUniforms: camera, lights, shadow matrices.
+      vk::DescriptorSetLayoutBinding(4, vk::DescriptorType::eUniformBuffer, 1,
+                                     vk::ShaderStageFlagBits::eVertex |
+                                         vk::ShaderStageFlagBits::eFragment,
+                                     nullptr)};
 
   vk::DescriptorSetLayoutCreateInfo layoutInfo{
       .bindingCount = static_cast<uint32_t>(bindings.size()),
@@ -227,8 +248,9 @@ void RenderPlugin::createGraphicsPipeline() {
 void RenderPlugin::createDescriptorPool() {
   // We need MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT descriptor sets
   std::array poolSize{
+      // Two per set: the object's and the frame's.
       vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer,
-                             MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT),
+                             2 * MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT),
       // Three per set: the texture and the two shadow maps.
       vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler,
                              3 * MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT)};
@@ -441,7 +463,7 @@ Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
 
   Renderable renderable;
   for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+    vk::DeviceSize bufferSize = sizeof(ObjectUniforms);
     vk::raii::Buffer buffer = nullptr;
     vk::raii::DeviceMemory bufferMemory = nullptr;
     createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer,
@@ -479,7 +501,10 @@ Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
       vk::DescriptorBufferInfo bufferInfo{.buffer =
                                               *renderable.uniformBuffers[i],
                                           .offset = 0,
-                                          .range = sizeof(UniformBufferObject)};
+                                          .range = sizeof(ObjectUniforms)};
+      vk::DescriptorBufferInfo frameInfo{.buffer = *frameUniforms[i],
+                                         .offset = 0,
+                                         .range = sizeof(FrameUniforms)};
       vk::DescriptorImageInfo imageInfo{
           .sampler = *core->graphics->sampler,
           .imageView = *subTexture->view,
@@ -520,7 +545,14 @@ Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
                                  .descriptorCount = 1,
                                  .descriptorType =
                                      vk::DescriptorType::eCombinedImageSampler,
-                                 .pImageInfo = &localShadowInfo}};
+                                 .pImageInfo = &localShadowInfo},
+          vk::WriteDescriptorSet{.dstSet = *renderable.descriptorSets[s][i],
+                                 .dstBinding = 4,
+                                 .dstArrayElement = 0,
+                                 .descriptorCount = 1,
+                                 .descriptorType =
+                                     vk::DescriptorType::eUniformBuffer,
+                                 .pBufferInfo = &frameInfo}};
       core->device->device.updateDescriptorSets(descriptorWrites, {});
     }
   }

@@ -14,14 +14,23 @@ struct MeshRef {
 	std::shared_ptr<Mesh> mesh = createCube();
 };
 
-struct UniformBufferObject
+// Binding 0: what differs between entities, rewritten per entity per frame.
+struct ObjectUniforms
 {
 	alignas(16) glm::mat4 model;
-	alignas(16) glm::mat4 view;
-	alignas(16) glm::mat4 proj;
 	alignas(16) glm::vec4 material;
 	alignas(16) glm::vec4 baseColor{1.0f};
 	alignas(16) glm::vec4 pbr{1.0f, 1.0f, 0.0f, 0.0f};
+};
+static_assert(sizeof(ObjectUniforms) == 64 + 3 * 16,
+              "ObjectUniforms no longer matches its std140 layout");
+
+// Binding 4: the same for every entity, so one buffer per frame in flight
+// (RenderPlugin::frameUniforms) shared by all descriptor sets.
+struct FrameUniforms
+{
+	alignas(16) glm::mat4 view;
+	alignas(16) glm::mat4 proj;
 	alignas(16) glm::vec4 cameraPos{0.0f};
 	alignas(16) DirectionalLight dirLights[MAX_LIGHTS];
 	alignas(16) PointLight       pointLights[MAX_LIGHTS];
@@ -42,10 +51,10 @@ struct UniformBufferObject
 };
 // The C++ <-> slang correspondence is maintained by hand, so pin the one
 // number that catches a drift in either file.
-static_assert(sizeof(UniformBufferObject) ==
-                  3 * 64 + 4 * 16 + MAX_LIGHTS * (32 + 32 + 48) + 16 +
+static_assert(sizeof(FrameUniforms) ==
+                  2 * 64 + 16 + MAX_LIGHTS * (32 + 32 + 48) + 16 +
                       64 + 16 + MAX_LIGHTS * 7 * 64 + 16,
-              "UniformBufferObject no longer matches its std140 layout");
+              "FrameUniforms no longer matches its std140 layout");
 
 struct Renderable {
 	std::vector<vk::raii::Buffer>        uniformBuffers;
@@ -165,6 +174,10 @@ struct RenderPlugin : Plugin {
 	vk::raii::Pipeline            linePipeline        = nullptr;
 	vk::raii::Pipeline            propPipeline        = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
+	// FrameUniforms, one per frame in flight, written once in updateUniforms.
+	std::vector<vk::raii::Buffer>       frameUniforms;
+	std::vector<vk::raii::DeviceMemory> frameUniformsMemory;
+	std::vector<void *>                 frameUniformsMapped;
 
 	// Directional shadow map: depth from dirLights[0], drawn in start() and
 	// sampled by every mesh at binding 2. One image is enough - the barrier in
@@ -178,7 +191,7 @@ struct RenderPlugin : Plugin {
 	vk::raii::Pipeline          shadowPipeline = nullptr;
 	vk::raii::Pipeline          shadowPropPipeline = nullptr; // instanced props
 	// Spot and point lights share one layered map: spots first, then six
-	// faces per point light (layer layout in UniformBufferObject).
+	// faces per point light (layer layout in FrameUniforms).
 	static constexpr uint32_t localShadowSize   = 512;
 	static constexpr uint32_t localShadowLayers = MAX_LIGHTS * 7;
 	vk::raii::Image                  localShadowImage     = nullptr;
@@ -227,6 +240,7 @@ struct RenderPlugin : Plugin {
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
 	void createDescriptorPool();
+	void createFrameUniforms();
 	void createShadowResources();
 	void drawShadowPass(entt::registry &reg);
 	// lightViewProj for dirLights[0], centred on `center`; false if no light.
