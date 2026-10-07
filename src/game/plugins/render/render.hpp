@@ -71,8 +71,25 @@ struct Model {
 	bool prop = false;
 };
 
+// Keeps a model as one merged mesh instead of a root plus one ModelNode child
+// per glTF node: the map, whose navmesh, heightfield and clicks read its one
+// mesh.
+struct MergedModel {};
+
+// One glTF node of `root`'s model past the first, drawn as its own entity so
+// it can be told apart (hidden, retextured...). Its vertices are already in
+// the model's space, so it just copies root's Transform. Respawned with the
+// root on load, not on its own.
+struct ModelNode {
+	entt::entity root = entt::null;
+	char name[64] = ""; // the glTF node's
+};
+
 struct DebugMesh {};
 struct DebugWire {};
+// With DebugMesh: the indices are a line list, drawn opaque and depth-tested
+// in flat vertex colour (params.x = 2).
+struct LineMesh {};
 struct Prop {};
 
 // The six planes of a view-projection with 0..1 depth (Gribb-Hartmann), for
@@ -135,13 +152,17 @@ struct RenderPlugin : Plugin {
 		registerComponent<Prop>();
 		registerComponent<DebugMesh>();
 		registerComponent<DebugWire>();
+		registerComponent<LineMesh>();
 		registerComponent<Model>();
+		registerComponent<MergedModel>();
+		registerComponent<ModelNode>();
 	}
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
 	vk::raii::Pipeline            debugPipeline       = nullptr;
 	vk::raii::Pipeline            debugWirePipeline   = nullptr;
+	vk::raii::Pipeline            linePipeline        = nullptr;
 	vk::raii::Pipeline            propPipeline        = nullptr;
 	vk::raii::DescriptorPool      descriptorPool      = nullptr;
 
@@ -240,6 +261,18 @@ struct RenderPlugin : Plugin {
 	               std::shared_ptr<Mesh> mesh, std::shared_ptr<Texture> texture,
 	               Transform transform = {});
 	void despawn(entt::registry &reg, entt::entity entity);
+	// The mesh `entity` draws for model `path`: the whole model merged if it
+	// is MergedModel or a Prop, else its first glTF node.
+	std::shared_ptr<Mesh> rootMesh(entt::registry &reg, entt::entity entity,
+	                               const std::string &path);
+	// The other nodes of `path` as ModelNode children of `root` (none if
+	// rootMesh merged it). Call after `root` is spawned.
+	void spawnNodes(entt::registry &reg, entt::entity root,
+	                const std::string &path,
+	                const std::shared_ptr<Texture> &texture, glm::vec4 params);
+	void despawnNodes(entt::registry &reg, entt::entity root);
+	// Each model's parts, loaded once per path.
+	std::unordered_map<std::string, std::vector<ModelPart>> modelParts;
 	// The instanced batch props with `mesh` draw through, created on first use
 	// (`texture` is only read then).
 	// `material`: the entity's own, when it has one, so turning a mesh into a

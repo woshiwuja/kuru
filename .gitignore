@@ -11,7 +11,6 @@ vulkansdk-linux-x86_64-*/
 textures/*.pdf
 imgui.ini
 
-*.glb
 .vscode/c_cpp_properties.json
 .zed/tasks.json
 .gitignore

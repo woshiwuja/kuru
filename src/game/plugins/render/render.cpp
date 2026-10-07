@@ -13,6 +13,12 @@ using namespace KR;
 void RenderPlugin::init(entt::registry &reg) {
   // Other plugins reach the renderer through the registry, not a global.
   reg.ctx().emplace<RenderPlugin *>(this);
+  // Model nodes and hair are Relationship children that get destroyed on
+  // their own: keep the links from naming dead entities.
+  reg.on_destroy<Relationship>().connect<&unlinkDestroyed>();
+  // Model nodes and hair are Relationship children that get destroyed on
+  // their own: keep the links from naming dead entities.
+  reg.on_destroy<Relationship>().connect<&unlinkDestroyed>();
   createDescriptorSetLayout();
   createGraphicsPipeline();
   createDescriptorPool();
@@ -205,6 +211,17 @@ void RenderPlugin::createGraphicsPipeline() {
   debugWirePipeline = vk::raii::Pipeline(
       core->device->device, nullptr,
       pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+  // LineMesh: real line-list geometry (hair strands), opaque and depth-tested
+  // like a mesh, unlike the wireframe overlay above.
+  inputAssembly.topology = vk::PrimitiveTopology::eLineList;
+  rasterizer.polygonMode = vk::PolygonMode::eFill;
+  depthStencil.depthTestEnable = vk::True;
+  depthStencil.depthWriteEnable = vk::True;
+  colorBlendAttachment.blendEnable = vk::False;
+  linePipeline = vk::raii::Pipeline(
+      core->device->device, nullptr,
+      pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
 void RenderPlugin::createDescriptorPool() {
@@ -232,12 +249,30 @@ void RenderPlugin::start(entt::registry &reg) {
   std::erase_if(retired, [this](const Retired &r) {
     return r.frame + MAX_FRAMES_IN_FLIGHT <= frameCount;
   });
+  // Nodes whose root is gone (despawned, destroyed in the inspector) go too.
+  std::vector<entt::entity> orphans;
+  for (auto [e, node] : reg.view<ModelNode>().each()) {
+    if (!reg.valid(node.root)) {
+      orphans.push_back(e);
+    }
+  }
+  for (entt::entity e : orphans) {
+    despawn(reg, e);
+  }
   drawShadowPass(reg);
 
 }
 
 void RenderPlugin::update(entt::registry &reg) {
   auto *core = Core::get();
+  // Nodes go where their root went this frame (physics has run by now).
+  for (auto [e, node, t] : reg.view<ModelNode, Transform>().each()) {
+    if (reg.valid(node.root)) {
+      if (const auto *root = reg.try_get<Transform>(node.root)) {
+        t = *root;
+      }
+    }
+  }
   updateUniforms(reg);
   fillMainInstances(reg);
   drawMeshes(reg);
@@ -315,6 +350,9 @@ void RenderPlugin::save(entt::registry &reg, SaveFile &file) {
 // Loaded entities have Transform and Model but none of the GPU-side
 // components: spawn them again from the saved paths.
 void RenderPlugin::load(entt::registry &reg, SaveFile &file) {
+  // Saved nodes are stale copies: respawning their root below makes new ones.
+  auto nodes = reg.view<ModelNode>();
+  reg.destroy(nodes.begin(), nodes.end());
   auto view = reg.view<Model>();
   const std::vector<entt::entity> entities(view.begin(), view.end());
   for (entt::entity e : entities) {
@@ -487,6 +525,57 @@ Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
     }
   }
   return renderable;
+}
+
+std::shared_ptr<Mesh> RenderPlugin::rootMesh(entt::registry &reg,
+                                             entt::entity entity,
+                                             const std::string &path) {
+  if (reg.any_of<MergedModel, Prop>(entity)) {
+    return getMesh(reg, path).handle();
+  }
+  auto it = modelParts.find(path);
+  if (it == modelParts.end()) {
+    it = modelParts.emplace(path, loadModelParts(path)).first;
+  }
+  return it->second.front().mesh;
+}
+
+void RenderPlugin::spawnNodes(entt::registry &reg, entt::entity root,
+                              const std::string &path,
+                              const std::shared_ptr<Texture> &texture,
+                              glm::vec4 params) {
+  const auto it = modelParts.find(path);
+  if (reg.any_of<MergedModel, Prop>(root) || it == modelParts.end()) {
+    return;
+  }
+  Transform transform;
+  if (const auto *t = reg.try_get<Transform>(root)) {
+    transform = *t;
+  }
+  for (size_t i = 1; i < it->second.size(); i++) {
+    const ModelPart &part = it->second[i];
+    const entt::entity child = reg.create();
+    spawn(reg, child, part.mesh, texture, params, transform);
+    auto &node = reg.emplace<ModelNode>(child, ModelNode{.root = root});
+    snprintf(node.name, sizeof(node.name), "%s", part.name.c_str());
+    ::attach(reg, child, root);
+  }
+}
+
+void RenderPlugin::despawnNodes(entt::registry &reg, entt::entity root) {
+  if (!reg.all_of<Relationship>(root)) {
+    return;
+  }
+  std::vector<entt::entity> nodes;
+  each_child(reg, root, [&](entt::entity child) {
+    if (reg.all_of<ModelNode>(child)) {
+      nodes.push_back(child);
+    }
+  });
+  for (entt::entity child : nodes) {
+    detach(reg, child);
+    despawn(reg, child);
+  }
 }
 
 void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
@@ -1054,7 +1143,8 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
 
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *debugPipeline);
   for (auto [entity, meshRef, renderable] :
-       reg.view<MeshRef, Renderable, DebugMesh>(entt::exclude<DebugWire>).each()) {
+       reg.view<MeshRef, Renderable, DebugMesh>(entt::exclude<DebugWire, LineMesh>)
+           .each()) {
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
                    *meshRef.mesh, renderable);
   }
@@ -1062,6 +1152,13 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *debugWirePipeline);
   for (auto [entity, meshRef, renderable] :
        reg.view<MeshRef, Renderable, DebugWire>().each()) {
+    drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
+                   *meshRef.mesh, renderable);
+  }
+
+  commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *linePipeline);
+  for (auto [entity, meshRef, renderable] :
+       reg.view<MeshRef, Renderable, LineMesh>().each()) {
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
                    *meshRef.mesh, renderable);
   }
@@ -1103,9 +1200,11 @@ void spawn(entt::registry &reg, entt::entity entity,
            const std::string &meshPath, const std::string &texturePath,
            glm::vec4 params, Transform transform) {
   setModel(reg, entity, meshPath, texturePath, params, false);
+  auto &render = renderer(reg);
   std::shared_ptr<Texture> fallbackTexture = getTexture(reg, texturePath);
-  renderer(reg).spawn(reg, entity, getMesh(reg, meshPath).handle(),
-                      std::move(fallbackTexture), params, transform);
+  render.spawn(reg, entity, render.rootMesh(reg, entity, meshPath),
+               fallbackTexture, params, transform);
+  render.spawnNodes(reg, entity, meshPath, fallbackTexture, params);
 }
 
 void spawnProp(entt::registry &reg, entt::entity entity,

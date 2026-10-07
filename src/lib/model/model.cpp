@@ -87,10 +87,15 @@ glm::mat4 nodeLocalMatrix(const tinygltf::Node &node) {
   return m;
 }
 
-} // namespace
+// One drawn instance of a glTF mesh: the node's world matrix bakes into the
+// vertices.
+struct MeshInstance {
+  int mesh = 0;
+  glm::mat4 matrix{1.0f};
+  std::string name;
+};
 
-std::shared_ptr<Mesh> loadModel(const std::string &path) {
-  tinygltf::Model model;
+bool readGltf(const std::string &path, tinygltf::Model &model) {
   tinygltf::TinyGLTF loader;
   std::string err;
   std::string warn;
@@ -108,18 +113,55 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   if (!ret) {
     std::cout << "glTF: could not load \"" << path
               << "\", using a placeholder cube instead\n";
-    return createCube();
+  }
+  return ret;
+}
+
+// Every mesh node of the default scene, in scene order.
+std::vector<MeshInstance> meshInstances(const tinygltf::Model &model) {
+  std::vector<MeshInstance> instances;
+  const auto visit = [&](auto &&self, int nodeIndex,
+                         const glm::mat4 &parent) -> void {
+    const tinygltf::Node &node = model.nodes[nodeIndex];
+    const glm::mat4 world = parent * nodeLocalMatrix(node);
+    if (node.mesh >= 0) {
+      instances.push_back({node.mesh, world, node.name});
+    }
+    for (int child : node.children) {
+      self(self, child, world);
+    }
+  };
+  if (!model.scenes.empty()) {
+    const int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
+    for (int root : model.scenes[sceneIndex].nodes) {
+      visit(visit, root, glm::mat4(1.0f));
+    }
+  } else {
+    for (size_t i = 0; i < model.meshes.size(); i++) {
+      instances.push_back({static_cast<int>(i), glm::mat4(1.0f),
+                           model.meshes[i].name});
+    }
+  }
+  return instances;
+}
+
+// Base-colour texture per material slot (see materialSlot in buildMesh),
+// loaded on first use: the parts of one model share them.
+struct MaterialTextures {
+  const tinygltf::Model &model;
+  std::vector<std::shared_ptr<Texture>> slots;
+
+  explicit MaterialTextures(const tinygltf::Model &m)
+      : model(m), slots(m.materials.size() + 1) {}
+
+  std::shared_ptr<Texture> get(size_t slot) {
+    if (!slots[slot]) {
+      slots[slot] = load(static_cast<int>(slot) - 1);
+    }
+    return slots[slot];
   }
 
-  std::vector<Vertex> vertices;
-  std::vector<uint32_t> indices;
-  std::vector<SubMesh> submeshes;
-  // World height range, used by MapPlugin to build the physics heightfield.
-  float minY = std::numeric_limits<float>::max();
-  float maxY = std::numeric_limits<float>::lowest();
-
-  const auto loadMaterialTexture =
-      [&](int materialIndex) -> std::shared_ptr<Texture> {
+  std::shared_ptr<Texture> load(int materialIndex) const {
     std::vector<double> factor = {1.0, 1.0, 1.0, 1.0};
     if (materialIndex >= 0 &&
         materialIndex < static_cast<int>(model.materials.size())) {
@@ -149,7 +191,20 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
                                     static_cast<unsigned char>(std::lround(
                                         std::clamp(factor[3], 0.0, 1.0) * 255.0))};
     return loadTextureFromPixels(pixel, 1, 1);
-  };
+  }
+};
+
+// One Mesh from `instances`, vertices in model space.
+std::shared_ptr<Mesh> buildMesh(const tinygltf::Model &model,
+                                const std::vector<MeshInstance> &instances,
+                                MaterialTextures &textures) {
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+  std::vector<SubMesh> submeshes;
+  // World height range, used by MapPlugin to build the physics heightfield.
+  float minY = std::numeric_limits<float>::max();
+  float maxY = std::numeric_limits<float>::lowest();
+
   // Indices are grouped by material and become one submesh (one texture, one
   // descriptor set per frame) each. Per primitive would be per node instance
   // too, since nodes reuse meshes: thousands of texture uploads and sets.
@@ -163,31 +218,9 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   };
   std::vector<std::vector<uint32_t>> slotIndices(model.materials.size() + 1);
 
-  std::vector<std::pair<int, glm::mat4>> instances;
-  const auto visit = [&](auto &&self, int nodeIndex,
-                         const glm::mat4 &parent) -> void {
-    const tinygltf::Node &node = model.nodes[nodeIndex];
-    const glm::mat4 world = parent * nodeLocalMatrix(node);
-    if (node.mesh >= 0) {
-      instances.emplace_back(node.mesh, world);
-    }
-    for (int child : node.children) {
-      self(self, child, world);
-    }
-  };
-  if (!model.scenes.empty()) {
-    const int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
-    for (int root : model.scenes[sceneIndex].nodes) {
-      visit(visit, root, glm::mat4(1.0f));
-    }
-  } else {
-    for (size_t i = 0; i < model.meshes.size(); i++) {
-      instances.emplace_back(static_cast<int>(i), glm::mat4(1.0f));
-    }
-  }
-
-  for (const auto &[meshIndex, nodeMatrix] : instances) {
-    const tinygltf::Mesh &mesh = model.meshes[meshIndex];
+  for (const MeshInstance &instance : instances) {
+    const glm::mat4 &nodeMatrix = instance.matrix;
+    const tinygltf::Mesh &mesh = model.meshes[instance.mesh];
     const glm::mat3 normalMatrix = glm::mat3(nodeMatrix);
     for (const auto &primitive : mesh.primitives) {
       // Get indices
@@ -323,7 +356,7 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
                    slotIndices[slot].end());
     submeshes.push_back(SubMesh{indexOffset,
                                 static_cast<uint32_t>(slotIndices[slot].size()),
-                                loadMaterialTexture(static_cast<int>(slot) - 1)});
+                                textures.get(slot)});
   }
 
   auto mesh = std::make_shared<Mesh>();
@@ -335,6 +368,33 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
   mesh->submeshes = std::move(submeshes);
 
   return mesh;
+}
+
+} // namespace
+
+std::shared_ptr<Mesh> loadModel(const std::string &path) {
+  tinygltf::Model model;
+  if (!readGltf(path, model)) {
+    return createCube();
+  }
+  MaterialTextures textures(model);
+  return buildMesh(model, meshInstances(model), textures);
+}
+
+std::vector<ModelPart> loadModelParts(const std::string &path) {
+  tinygltf::Model model;
+  if (!readGltf(path, model)) {
+    return {{path, createCube()}};
+  }
+  MaterialTextures textures(model);
+  std::vector<ModelPart> parts;
+  for (const MeshInstance &instance : meshInstances(model)) {
+    parts.push_back({instance.name, buildMesh(model, {instance}, textures)});
+  }
+  if (parts.empty()) {
+    parts.push_back({path, createCube()});
+  }
+  return parts;
 }
 
 std::shared_ptr<Mesh> createSphere(float radius, uint32_t rings,

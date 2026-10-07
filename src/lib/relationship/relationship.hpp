@@ -38,3 +38,32 @@ void each_child(entt::registry &reg, entt::entity p, F func) {
     c = next;
   }
 }
+
+inline void unlinkDestroyed(entt::registry &reg, entt::entity e) {
+  const auto link = [&reg](entt::entity x) -> Relationship * {
+    if (x == entt::null || !reg.valid(x)) {
+      return nullptr;
+    }
+    return reg.try_get<Relationship>(x);
+  };
+  const Relationship c = reg.get<Relationship>(e);
+  if (auto *prev = link(c.prev)) {
+    prev->next = c.next;
+  } else if (auto *parent = link(c.parent)) {
+    if (parent->first == e) {
+      parent->first = c.next;
+    }
+  }
+  if (auto *next = link(c.next)) {
+    next->prev = c.prev;
+  }
+  for (entt::entity child = c.first; child != entt::null;) {
+    auto *r = link(child);
+    if (r == nullptr) {
+      break;
+    }
+    const entt::entity next = r->next;
+    r->parent = r->prev = r->next = entt::null;
+    child = next;
+  }
+}

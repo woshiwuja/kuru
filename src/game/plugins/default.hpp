@@ -1,6 +1,7 @@
 #pragma once
 #include <Kuru.h>
 #include <Jolt/Jolt.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include "Jolt/Physics/Body/BodyCreationSettings.h"
 #include "entt/entity/entity.hpp"
@@ -8,6 +9,7 @@
 #include "character/character.hpp"
 #include "render/render.hpp"
 #include "model/model.hpp"
+#include "hair/hair.hpp"
 #include "character/stats.hpp"
 #include "transform/transform.hpp"
 #include "picking/picking.hpp"
@@ -36,7 +38,8 @@ struct DefaultPlugin : public Plugin {
         e, new JPH::CapsuleShape(1.0f, 0.5f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
         JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
-    reg.emplace<ModelPath>(e, "models/spongebob.glb");
+    reg.emplace<ModelPath>(e, "models/human.glb");
+    reg.emplace<HairPath>(e, HairPath{.path = "models/hair/curly.hair"});
     reg.emplace<Pickable>(e);
     for (auto i = 0; i<=100; i++ ){
         for (auto j = 0; j<=100; j++ ){

@@ -38,9 +38,11 @@ struct ModelPlugin : public Plugin {
       const std::string path = r.get<ModelPath>(e).path;
       if (path.empty())
         continue;
+      // The old model's nodes go, the new one's come below.
+      render.despawnNodes(r, e);
       auto &meshRef = r.get<MeshRef>(e);
       RenderPlugin::Retired old{.frame = render.frameCount};
-      old.mesh = std::exchange(meshRef.mesh, loadModel(path));
+      old.mesh = std::exchange(meshRef.mesh, render.rootMesh(r, e, path));
       if (r.all_of<Prop>(e)) {
         // Props draw through a batch per mesh; the prop pass below makes the
         // new mesh's.
@@ -52,6 +54,15 @@ struct ModelPlugin : public Plugin {
       }
       recordPath(r, e, path);
       render.retired.push_back(std::move(old));
+      std::shared_ptr<Texture> texture = getTexture(r, "");
+      glm::vec4 params{0.0f};
+      if (const auto *ref = r.try_get<MaterialRef>(e)) {
+        if (ref->material->baseColor) {
+          texture = ref->material->baseColor;
+        }
+        params = ref->params;
+      }
+      render.spawnNodes(r, e, path, texture, params);
       r.remove<ModelPath>(e);
     }
 

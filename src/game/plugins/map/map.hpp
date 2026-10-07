@@ -32,6 +32,7 @@ struct MapPlugin : public Plugin {
 		reg.emplace<TexturePath>(mapEntity, "textures/viking_room.ktx2");
 		reg.emplace<Map>(mapEntity, mapPath);
 		reg.emplace<Walkable>(mapEntity);
+		reg.emplace<MergedModel>(mapEntity); // one mesh: see MergedModel
 
 		entt::resource<Mesh> mesh = getMesh(reg, mapPath);
 

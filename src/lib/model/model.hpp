@@ -3,6 +3,7 @@
 #include "../image/image.hpp"
 #include <memory>
 #include <string>
+#include <vector>
 #include <vulkan/vulkan_raii.hpp>
 
 namespace KR {
@@ -35,6 +36,11 @@ struct Mesh {
 };
 
 std::shared_ptr<Mesh> loadModel(const std::string &path);
+struct ModelPart {
+  std::string name; // the node's
+  std::shared_ptr<Mesh> mesh;
+};
+std::vector<ModelPart> loadModelParts(const std::string &path);
 
 std::shared_ptr<Mesh> createSphere(float radius = 0.5f, uint32_t rings = 16,
                                    uint32_t sectors = 32);

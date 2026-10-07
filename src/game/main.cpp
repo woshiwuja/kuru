@@ -15,6 +15,7 @@
 #include "plugins/ui/ui.hpp"
 #include "plugins/material/material.hpp"
 #include "plugins/model/model.hpp"
+#include "plugins/hair/hair.hpp"
 #include "plugins/picking/picking.hpp"
 #include "plugins/default.hpp"
 #include "plugins/pausing/pausing.hpp"
@@ -53,6 +54,7 @@ int main()
 		app.addPlugin(std::make_unique<MaterialPlugin>());
 		app.addPlugin(std::make_unique<TexturePlugin>());
 		app.addPlugin(std::make_unique<ModelPlugin>());
+		app.addPlugin(std::make_unique<HairPlugin>()); // after Physics/Render/Model: see HairPlugin::update
 		app.addPlugin(std::make_unique<PickingPlugin>()); // after TransformPlugin: see update()
 		app.addPlugin(std::make_unique<SavePlugin>()); // before PausingPlugin: it reads SaveMenu
 		app.addPlugin(std::make_unique<SettingsPlugin>()); // before PausingPlugin: it reads SettingsMenu
