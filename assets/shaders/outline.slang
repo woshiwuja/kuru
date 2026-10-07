@@ -15,42 +15,24 @@
 
 // ---- normal + distance prepass ---------------------------------------------
 
-// Same layout as slang.slang's UBO (and render.hpp's UniformBufferObject): the
-// prepass reuses RenderPlugin's mesh pipeline layout and its per-entity
-// descriptor sets, so it must see binding 0 the same way. The texture at
-// binding 1 is simply not read here. Only model/view/proj/material are read,
-// but the light arrays still have to be declared or the trailing fields drift.
-static const uint MAX_LIGHTS = 4;
-
-struct DirectionalLight {
-    float4 direction;
-    float4 color;
-};
-struct PointLight {
-    float4 position;
-    float4 color;
-};
-struct SpotLight {
-    float4 position;
-    float4 direction;
-    float4 color;
-};
-
-struct UniformBufferObject {
+// Same bindings as slang.slang (and render.hpp's ObjectUniforms /
+// FrameUniforms): the prepass reuses RenderPlugin's mesh pipeline layout and
+// its per-entity descriptor sets. The texture at binding 1 is not read here.
+// FrameUniforms is declared only up to proj: a prefix of a uniform block
+// lays out the same.
+struct ObjectUniforms {
     float4x4 model;
-    float4x4 view;
-    float4x4 proj;
     float4 material;
     float4 baseColor;
     float4 pbr;
-    float4 cameraPos;
-    DirectionalLight dirLights[MAX_LIGHTS];
-    PointLight       pointLights[MAX_LIGHTS];
-    SpotLight        spotLights[MAX_LIGHTS];
-    uint4 counts;
+};
+struct FrameUniforms {
+    float4x4 view;
+    float4x4 proj;
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
+[[vk::binding(0, 0)]] ConstantBuffer<ObjectUniforms> obj;
+[[vk::binding(4, 0)]] ConstantBuffer<FrameUniforms> ubo;
 
 struct PrepassOutput {
     float4 position : SV_Position;
@@ -64,10 +46,10 @@ struct PrepassOutput {
 [shader("vertex")]
 PrepassOutput prepassVert(float3 position, float3 color, float2 uv, float3 normal) {
     PrepassOutput output;
-    float4 world = mul(ubo.model, float4(position, 1.0));
+    float4 world = mul(obj.model, float4(position, 1.0));
     output.position = mul(ubo.proj, mul(ubo.view, world));
     output.worldPos = world.xyz;
-    float3x3 normalMatrix = float3x3(ubo.model[0].xyz, ubo.model[1].xyz, ubo.model[2].xyz);
+    float3x3 normalMatrix = float3x3(obj.model[0].xyz, obj.model[1].xyz, obj.model[2].xyz);
     output.worldNormal = normalize(mul(normalMatrix, normal));
     return output;
 }
@@ -76,7 +58,7 @@ PrepassOutput prepassVert(float3 position, float3 color, float2 uv, float3 norma
 float4 prepassFrag(float3 worldPos, float3 worldNormal) : SV_Target {
     float3 faceNormal = normalize(cross(ddx(worldPos), ddy(worldPos)));
     faceNormal = faceNormal.y < 0.0 ? -faceNormal : faceNormal;
-    float3 n = ubo.material.x < 0.5 ? normalize(worldNormal) : faceNormal;
+    float3 n = obj.material.x < 0.5 ? normalize(worldNormal) : faceNormal;
     return float4(n, length(mul(ubo.view, float4(worldPos, 1.0)).xyz));
 }
 

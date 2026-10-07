@@ -970,12 +970,12 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
 
   // Column 3 of the inverse view is the camera's world position. Once per
   // frame: the specular term needs it and the shader cannot invert `view`.
-  UniformBufferObject ubo{.view = frame.view,
-                          .proj = frame.proj,
-                          .cameraPos = glm::inverse(frame.view)[3]};
+  FrameUniforms ubo{.view = frame.view,
+                    .proj = frame.proj,
+                    .cameraPos = glm::inverse(frame.view)[3]};
 
-  // The matrices drawShadowPass rendered with this frame; they have to land
-  // in every UBO, so they are set before any upload.
+  // The matrices drawShadowPass rendered with this frame, so the shader
+  // compares against the same ones.
   if (sunShadowValid) {
     ubo.lightViewProj = sunViewProj;
     ubo.shadow = {1.0f, 1.0f / shadowSize, shadowConfig.shaderBias, 0.0f};
@@ -1005,15 +1005,18 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
     }
     ubo.spotLights[counts.z++] = light;
   }
+  memcpy(frameUniformsMapped[frame.frameIndex], &ubo, sizeof(ubo));
 
   auto upload = [&](const Material &m, glm::vec4 params, const glm::mat4 &model,
                     const Renderable &renderable) {
-    ubo.model = model;
-    ubo.material = {params.x, params.y, m.alphaCutoff, m.alphaMask ? 1.0f : 0.0f};
-    ubo.baseColor = m.color;
-    ubo.pbr = {m.metallic, m.roughness, 0.0f, 0.0f};
-    memcpy(renderable.uniformBuffersMapped[frame.frameIndex], &ubo,
-           sizeof(ubo));
+    const ObjectUniforms object{
+        .model = model,
+        .material = {params.x, params.y, m.alphaCutoff,
+                     m.alphaMask ? 1.0f : 0.0f},
+        .baseColor = m.color,
+        .pbr = {m.metallic, m.roughness, 0.0f, 0.0f}};
+    memcpy(renderable.uniformBuffersMapped[frame.frameIndex], &object,
+           sizeof(object));
   };
 
   for (auto [entity, transform, material, renderable] :

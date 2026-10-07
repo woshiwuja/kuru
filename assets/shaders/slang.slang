@@ -22,21 +22,25 @@ struct SpotLight {
     float4 color;       // rgb: color, w: intensity
 };
 
-struct UniformBufferObject {
+// Per entity (render.hpp's ObjectUniforms).
+struct ObjectUniforms {
     float4x4 model;
-    float4x4 view;
-    float4x4 proj;
     // x: 2 = debug overlay (flat vertex color, y = its alpha), 0 = textured mesh.
     float4 material;
     float4 baseColor;
     float4 pbr;
+};
+
+// Per frame, shared by every entity (render.hpp's FrameUniforms).
+struct FrameUniforms {
+    float4x4 view;
+    float4x4 proj;
     float4 cameraPos;
     DirectionalLight dirLights[MAX_LIGHTS];
     PointLight       pointLights[MAX_LIGHTS];
     SpotLight        spotLights[MAX_LIGHTS];
     // x: directional, y: point, z: spot. w unused.
     uint4 counts;
-    // Last, so outline.slang's shorter copy of this struct stays a valid prefix.
     // World -> shadow map clip space for dirLights[0].
     float4x4 lightViewProj;
     // x: 1 if the shadow map holds dirLights[0] this frame, y: texel size
@@ -51,7 +55,8 @@ struct UniformBufferObject {
     float4 localShadow;
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<UniformBufferObject> ubo;
+[[vk::binding(0, 0)]] ConstantBuffer<ObjectUniforms> obj;
+[[vk::binding(4, 0)]] ConstantBuffer<FrameUniforms> ubo;
 [[vk::binding(1, 0)]] Sampler2D texSampler;
 // Depth of the scene seen from dirLights[0] (RenderPlugin::drawShadowPass),
 // read through a comparison sampler: each tap returns the 0..1 fraction of
@@ -81,21 +86,21 @@ struct VSOutput {
 [shader("vertex")]
 VSOutput vertMain(float3 position, float3 color, float2 uv, float3 normal) {
     VSOutput output;
-    float4 world = mul(ubo.model, float4(position, 1.0));
+    float4 world = mul(obj.model, float4(position, 1.0));
     output.position = mul(ubo.proj, mul(ubo.view, world));
     output.color = color;
     output.uv = uv;
     // Upper 3x3 of the model matrix: fine as long as scale stays uniform,
     // which is all Transform.scale is used for here today. A non-uniform
     // scale needs the inverse-transpose instead.
-    float3x3 normalMatrix = float3x3(ubo.model[0].xyz, ubo.model[1].xyz, ubo.model[2].xyz);
+    float3x3 normalMatrix = float3x3(obj.model[0].xyz, obj.model[1].xyz, obj.model[2].xyz);
     output.worldNormal = normalize(mul(normalMatrix, normal));
     output.viewDir = ubo.cameraPos.xyz - world.xyz;
     return output;
 }
 
 // Props (RenderPlugin::propPipeline): the model matrix comes per instance from
-// vertex binding 1 as glm's four columns, locations 4-7. ubo.model is unused.
+// vertex binding 1 as glm's four columns, locations 4-7. obj.model is unused.
 // Building a float4x4 from columns makes them its rows, so the vector goes on
 // the left: mul(v, M) = sum v[i] * c[i], which is glm's M * v.
 [shader("vertex")]
@@ -113,11 +118,11 @@ VSOutput vertMainInstanced(float3 position, float3 color, float2 uv, float3 norm
     return output;
 }
 
-// Shadow pass: depth only, no fragment stage. Same per-entity UBO as vertMain;
+// Shadow pass: depth only, no fragment stage. Same per-entity model as vertMain;
 // which light/face it renders for comes in as a push constant.
 [shader("vertex")]
 float4 shadowVert(float3 position, float3 color, float2 uv, float3 normal) : SV_Position {
-    return mul(shadowPush.viewProj, mul(ubo.model, float4(position, 1.0)));
+    return mul(shadowPush.viewProj, mul(obj.model, float4(position, 1.0)));
 }
 
 // Props in the shadow pass: the instance matrix, as in vertMainInstanced.
@@ -319,21 +324,21 @@ float windowedFalloff(float dist, float radius) {
 float4 fragMain(float3 color, float2 uv, float3 worldNormal, float3 viewDir) : SV_Target {
     // Debug overlay (material.x == 2): flat vertex color, alpha from material.y.
     // No lighting, no texture, no shadow ray - it's a diagnostic, not a surface.
-    if (ubo.material.x > 1.5) {
-        return float4(color, ubo.material.y);
+    if (obj.material.x > 1.5) {
+        return float4(color, obj.material.y);
     }
 
     float4 tex = texSampler.Sample(uv);
     // glTF alpha mask: binary, no blending. material.w gates it, material.z is the cutoff.
-    if (ubo.material.w > 0.5 && tex.a * ubo.baseColor.a < ubo.material.z) {
+    if (obj.material.w > 0.5 && tex.a * obj.baseColor.a < obj.material.z) {
         discard;
     }
 
     float3 n = normalize(worldNormal);
     float3 v = normalize(viewDir);
-    float3 albedo = color * ubo.baseColor.rgb * tex.rgb;
-    float metallic  = saturate(ubo.pbr.x);
-    float roughness = clamp(ubo.pbr.y, 0.04, 1.0);
+    float3 albedo = color * obj.baseColor.rgb * tex.rgb;
+    float metallic  = saturate(obj.pbr.x);
+    float roughness = clamp(obj.pbr.y, 0.04, 1.0);
     float eAvg = ggxEavg(roughness);
 
     // Stand-in for an IBL: the sky gradient lights the diffuse lobe, and a
