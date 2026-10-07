@@ -33,6 +33,30 @@ inline float rayBox(glm::vec3 origin, glm::vec3 dir, glm::vec3 lo,
   return tNear;
 }
 
+// Ray vs triangle (Moller-Trumbore). The ray is origin + t * dir; returns the
+// hit t, or a negative value on a miss. Both faces count.
+inline float rayTriangle(glm::vec3 origin, glm::vec3 dir, glm::vec3 a,
+                         glm::vec3 b, glm::vec3 c) {
+  const glm::vec3 e1 = b - a, e2 = c - a;
+  const glm::vec3 p = glm::cross(dir, e2);
+  const float det = glm::dot(e1, p);
+  if (std::abs(det) < 1e-12f) {
+    return -1.0f; // parallel to the triangle
+  }
+  const float inv = 1.0f / det;
+  const glm::vec3 s = origin - a;
+  const float u = glm::dot(s, p) * inv;
+  if (u < 0.0f || u > 1.0f) {
+    return -1.0f;
+  }
+  const glm::vec3 q = glm::cross(s, e1);
+  const float v = glm::dot(dir, q) * inv;
+  if (v < 0.0f || u + v > 1.0f) {
+    return -1.0f;
+  }
+  return glm::dot(e2, q) * inv;
+}
+
 struct PickingPlugin : public Plugin {
   PickingPlugin() { registerComponent<Pickable>(); }
 

@@ -242,8 +242,6 @@ void RenderPlugin::update(entt::registry &reg) {
   fillMainInstances(reg);
   drawMeshes(reg);
   ImGui::ShowDemoWindow();
-  // Last 120 frames, oldest at `head`. ImGui's delta, not Core's: that one
-  // reads 0 while paused, and the frames still take time.
   static std::array<float, 120> frameMs{}, fps{};
   static int head = 0;
   const float dt = std::max(ImGui::GetIO().DeltaTime, 1e-6f);

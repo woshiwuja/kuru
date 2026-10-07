@@ -40,4 +40,9 @@ std::shared_ptr<Mesh> createSphere(float radius = 0.5f, uint32_t rings = 16,
                                    uint32_t sectors = 32);
 
 std::shared_ptr<Mesh> createCube(float halfExtent = 0.5f);
+
+// Tip at the origin, base circle at y = height: an inverted cone that points
+// down -Y. Flat-shaded.
+std::shared_ptr<Mesh> createCone(float radius = 0.25f, float height = 0.6f,
+                                 uint32_t sectors = 16);
 }

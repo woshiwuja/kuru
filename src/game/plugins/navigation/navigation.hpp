@@ -116,10 +116,24 @@ struct NavMap {
   }
 };
 
+// Tag: NavigationPlugin builds a NavMeshRef from this entity's MeshRef.
+struct Walkable {};
+
+// One entity's navmesh plus its debug overlay. Emplaced empty when the build
+// is queued, so the entity isn't queued twice; nav.mesh is null until then.
+struct NavMeshRef {
+  NavMap nav;
+  entt::entity debug = entt::null;
+  int polyCount = 0;
+};
+
 struct NavAgent {
   int idx = -1; // indice dtCrowd; -1 = non ancora inserito nella folla
   float maxSpeed = 3.5f;
   float maxAcceleration = 8.0f;
+  // The Walkable entity whose crowd this agent is in. Null: the first built
+  // one, pinned here on join.
+  entt::entity walkable = entt::null;
 };
 
 // Richiesta di destinazione: consumata e cancellata, come BodyCreationSettings
@@ -129,7 +143,10 @@ struct NavDest {
 };
 
 struct NavigationPlugin : public Plugin {
-  void init(entt::registry &reg) override;
+  NavigationPlugin() {
+    registerComponent<Walkable>();
+    registerComponent<NavMeshRef>();
+  }
   // Creare e distruggere entita' renderizzabili avviene qui e solo qui: in
   // update() il command buffer del frame ha gia' i draw registrati dentro, e
   // liberare un buffer che nomina ancora significa device lost. La UI si
@@ -139,10 +156,10 @@ struct NavigationPlugin : public Plugin {
 
   NavConfig config;
 
-  // Entita' su cui si costruisce (la sceglie la UI) e overlay dei poly, che e'
-  // di questo plugin: lo distrugge e lo ricrea a ogni build.
-  entt::entity target = entt::null;
-  entt::entity debugEntity = entt::null;
+  // Walkable entities waiting for a build, and the one building now. Builds
+  // run one at a time, in this order.
+  std::vector<entt::entity> queue;
+  entt::entity building = entt::null;
 
   // Esito dell'ultimo build, per il pannello. lastError vuoto = andato bene.
   std::string lastError;
@@ -166,14 +183,18 @@ struct NavigationPlugin : public Plugin {
   // sparisca sotto di lui.
   std::future<BuildResult> pending;
 
-  // Lancia il build su un thread e torna subito. Non lancia eccezioni: quella
-  // del worker riemerge da poll() e finisce in lastError, cosi' la UI vive.
-  void rebuild(entt::registry &reg);
+  // Lancia il build della prossima entita' in coda su un thread e torna
+  // subito. Non lancia eccezioni: quella del worker riemerge da poll() e
+  // finisce in lastError, cosi' la UI vive.
+  void buildNext(entt::registry &reg);
   // Raccoglie il risultato quando e' pronto: qui, sul main thread, avvengono
   // l'upload dell'overlay e l'inserimento nel registry.
   void poll(entt::registry &reg);
-  void spawnDebug(entt::registry &reg);
-  void spawnDebug(entt::registry &reg, const DebugGeom &geom);
-  void clearDebug(entt::registry &reg);
+  void spawnDebug(entt::registry &reg, NavMeshRef &ref);
+  void spawnDebug(entt::registry &reg, NavMeshRef &ref, const DebugGeom &geom);
+  void clearDebug(entt::registry &reg, NavMeshRef &ref);
+  // The NavMeshRef `agent` belongs to, pinning the first built one if it has
+  // none; null while that one isn't built.
+  NavMeshRef *navFor(entt::registry &reg, NavAgent &agent);
   void UI(entt::registry &reg);
 };

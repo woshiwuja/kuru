@@ -2,7 +2,12 @@
 #include "../common/common.hpp"
 #include "../core/core.hpp"
 #include <cstdio>
+#include <filesystem>
 #include <ktx.h>
+// Declarations only: STB_IMAGE_IMPLEMENTATION is target-wide, but model.cpp
+// owns the one implementation.
+#undef STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 namespace KR {
 
@@ -10,6 +15,41 @@ namespace {
 // Missing-texture magenta: solid 1x1, tiled by the sampler's wrap mode over
 // whatever UVs the mesh has.
 constexpr unsigned char FUCHSIA_PIXEL[4] = {255, 0, 255, 255};
+
+// A .png decoded by stb into an in-memory sRGB KTX2, so it takes load()'s KTX path.
+KTX_error_code createKtx2FromPng(const std::string &file, ktxTexture **out) {
+  int width = 0, height = 0, channels = 0;
+  stbi_uc *pixels =
+      stbi_load(file.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+  if (pixels == nullptr) {
+    return KTX_FILE_READ_ERROR;
+  }
+  ktxTextureCreateInfo info{};
+  info.vkFormat = static_cast<ktx_uint32_t>(vk::Format::eR8G8B8A8Srgb);
+  info.baseWidth = static_cast<ktx_uint32_t>(width);
+  info.baseHeight = static_cast<ktx_uint32_t>(height);
+  info.baseDepth = 1;
+  info.numDimensions = 2;
+  info.numLevels = 1;
+  info.numLayers = 1;
+  info.numFaces = 1;
+  info.isArray = KTX_FALSE;
+  info.generateMipmaps = KTX_FALSE;
+  ktxTexture2 *texture = nullptr;
+  KTX_error_code result =
+      ktxTexture2_Create(&info, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &texture);
+  if (result == KTX_SUCCESS) {
+    result = ktxTexture_SetImageFromMemory(
+        ktxTexture(texture), 0, 0, 0, pixels, size_t(width) * height * 4);
+    if (result == KTX_SUCCESS) {
+      *out = ktxTexture(texture);
+    } else {
+      ktxTexture_Destroy(ktxTexture(texture));
+    }
+  }
+  stbi_image_free(pixels);
+  return result;
+}
 } // namespace
 
 void transitionImageLayout(const vk::raii::CommandBuffer &commandBuffer,
@@ -137,11 +177,19 @@ void Texture::loadFallback()
 void Texture::load(const std::string &path)
 {
 	auto core = Core::get();
-	ktxTexture    *kTexture;
-	KTX_error_code result = ktxTexture_CreateFromNamedFile(
-	    assetPath(path).c_str(),
-	    KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
-	    &kTexture);
+	ktxTexture    *kTexture = nullptr;
+	KTX_error_code result;
+	if (std::filesystem::path(path).extension() == ".png")
+	{
+		result = createKtx2FromPng(assetPath(path), &kTexture);
+	}
+	else
+	{
+		result = ktxTexture_CreateFromNamedFile(
+		    assetPath(path).c_str(),
+		    KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,
+		    &kTexture);
+	}
 
 	if (result != KTX_SUCCESS)
 	{

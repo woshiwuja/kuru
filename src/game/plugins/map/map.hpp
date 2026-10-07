@@ -2,6 +2,8 @@
 #include <Kuru.h>
 #include "../render/render.hpp"
 #include "../render/mesh_registry.hpp"
+#include "../model/model.hpp"
+#include "../navigation/navigation.hpp"
 #include "Jolt/Physics/Body/BodyID.h"
 #include "entt/entity/fwd.hpp"
 #include "Recast.h"
@@ -20,14 +22,13 @@ struct Map {};
 struct MapPlugin : public Plugin {
     MapPlugin() { registerComponent<Map>(); }
     void init(entt::registry &reg)override{
-        // The heightfield is built in raw mesh units; PhysicsPlugin scales the
-        // shape from this Transform, so the map resizes from one place.
-        constexpr float mapScale = 2.0f;
         const std::string mapPath = "models/testmap.glb";
         entt::entity mapEntity = reg.create();
-		spawn(reg, mapEntity, mapPath, "textures/viking_room.ktx2", {},
-		      Transform{.scale = glm::vec3(mapScale)});
+		reg.emplace<Transform>(mapEntity);
+		reg.emplace<ModelPath>(mapEntity, mapPath);
+		reg.emplace<TexturePath>(mapEntity, "textures/viking_room.ktx2");
 		reg.emplace<Map>(mapEntity, mapPath);
+		reg.emplace<Walkable>(mapEntity);
 
 		entt::resource<Mesh> mesh = getMesh(reg, mapPath);
 

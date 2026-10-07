@@ -7,6 +7,7 @@
 #include "entt/entity/fwd.hpp"
 #include "character/character.hpp"
 #include "render/render.hpp"
+#include "model/model.hpp"
 #include "character/stats.hpp"
 #include "transform/transform.hpp"
 #include "picking/picking.hpp"
@@ -35,13 +36,14 @@ struct DefaultPlugin : public Plugin {
         e, new JPH::CapsuleShape(1.0f, 0.5f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
         JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
     bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
-    spawn(reg, e, "models/spongebob.glb", "");
+    reg.emplace<ModelPath>(e, "models/spongebob.glb");
     reg.emplace<Pickable>(e);
     for (auto i = 0; i<=100; i++ ){
         for (auto j = 0; j<=100; j++ ){
         auto prop = reg.create();
-        spawnProp(reg, prop, "primitive:cube", "",
-                  Transform{.position = {3.0+i+.5, 20, 3.0+j+.5},.scale= {1,1,1}});
+        reg.emplace<Transform>(prop, Transform{.position = {3.0+i+.5, 20, 3.0+j+.5},.scale= {1,1,1}});
+        reg.emplace<Prop>(prop);
+        reg.emplace<ModelPath>(prop, "primitive:cube");
         reg.emplace<Pickable>(prop);
         }
     }

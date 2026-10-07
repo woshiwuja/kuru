@@ -51,6 +51,7 @@ int main()
 		app.addPlugin(std::make_unique<InventoryPlugin>());
 		app.addPlugin(std::make_unique<NamePlugin>());
 		app.addPlugin(std::make_unique<MaterialPlugin>());
+		app.addPlugin(std::make_unique<TexturePlugin>());
 		app.addPlugin(std::make_unique<ModelPlugin>());
 		app.addPlugin(std::make_unique<PickingPlugin>()); // after TransformPlugin: see update()
 		app.addPlugin(std::make_unique<SavePlugin>()); // before PausingPlugin: it reads SaveMenu

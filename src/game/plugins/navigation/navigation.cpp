@@ -337,57 +337,60 @@ bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
 
 } // namespace
 
-void NavigationPlugin::init(entt::registry &reg) {
-  auto maps = reg.view<Map, MeshRef, Transform>();
-  if (maps.begin() != maps.end()) {
-    target = *maps.begin();
-  } else {
-    std::cout
-        << "navmesh: no Map entity with a MeshRef found, skipping build\n";
-  }
-  rebuild(reg);
-}
-
 void NavigationPlugin::start(entt::registry &reg) {
   if (rebuildRequested) {
     rebuildRequested = false;
-    rebuild(reg);
+    // Every navmesh goes: drop them and the loop below queues them all again.
+    // The old crowds die with them, so every agent index into them is stale:
+    // update() reinserts the agents.
+    for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
+      clearDebug(reg, ref);
+    }
+    reg.clear<NavMeshRef>();
+    for (auto [e, agent] : reg.view<NavAgent>().each()) {
+      agent.idx = -1;
+    }
+  }
+  // Walkable entities without a navmesh, e.g. a map that just spawned. The
+  // empty NavMeshRef keeps them out of this view while they wait.
+  auto fresh = reg.view<Walkable, MeshRef, Transform>(entt::exclude<NavMeshRef>);
+  const std::vector<entt::entity> found(fresh.begin(), fresh.end());
+  for (entt::entity e : found) {
+    reg.emplace<NavMeshRef>(e);
+    queue.push_back(e);
   }
   poll(reg);
+  buildNext(reg);
   if (overlayRequested) {
     overlayRequested = false;
-    if (config.drawDebug) {
-      spawnDebug(reg);
-    } else {
-      clearDebug(reg);
+    for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
+      if (config.drawDebug) {
+        spawnDebug(reg, ref);
+      } else {
+        clearDebug(reg, ref);
+      }
     }
   }
 }
 
-void NavigationPlugin::rebuild(entt::registry &reg) {
-  if (pending.valid())
+void NavigationPlugin::buildNext(entt::registry &reg) {
+  if (pending.valid() || queue.empty()) {
     return; // uno alla volta
-
+  }
+  building = queue.front();
+  queue.erase(queue.begin());
   lastError.clear();
   lastBuildSeconds = 0.0f;
   lastPolyCount = 0;
-  if (!reg.valid(target) || !reg.all_of<MeshRef, Transform>(target)) {
-    lastError = "nessuna mesh selezionata";
+  if (!reg.valid(building) || !reg.all_of<MeshRef, Transform>(building)) {
+    lastError = "walkable entity lost its mesh";
     return;
-  }
-
-  clearDebug(reg);
-  // La vecchia crowd muore qui, quindi ogni indice agente che la indicizzava
-  // non vale piu': update() li reinserisce da solo.
-  reg.ctx().erase<NavMap>();
-  for (auto [e, agent] : reg.view<NavAgent>().each()) {
-    agent.idx = -1;
   }
 
   // Unica lettura del registry: da qui in poi il worker lavora su una copia
   // sua, e gli slider della UI possono muoversi senza entrare nel build.
-  NavGeom geom = flatten(*reg.get<MeshRef>(target).mesh,
-                         reg.get<Transform>(target).matrix());
+  NavGeom geom = flatten(*reg.get<MeshRef>(building).mesh,
+                         reg.get<Transform>(building).matrix());
   const NavConfig cfg = config;
   buildPhase = 0;
   buildStarted = std::chrono::steady_clock::now();
@@ -412,61 +415,78 @@ void NavigationPlugin::poll(entt::registry &reg) {
   try {
     BuildResult out = pending.get();
     lastPolyCount = out.polyCount;
-    reg.ctx().erase<NavMap>();
-    reg.ctx().emplace<NavMap>(std::move(out.nav));
-    spawnDebug(reg, out.debug);
+    // Destroyed (or rebuilt) while building: nowhere to put the result.
+    if (!reg.valid(building) || !reg.all_of<NavMeshRef>(building)) {
+      return;
+    }
+    auto &ref = reg.get<NavMeshRef>(building);
+    ref.nav = std::move(out.nav);
+    ref.polyCount = out.polyCount;
+    spawnDebug(reg, ref, out.debug);
   } catch (const std::exception &e) {
-    reg.ctx().erase<NavMap>();
     lastError = e.what();
   }
 }
 
-void NavigationPlugin::spawnDebug(entt::registry &reg) {
-  auto *nav = reg.ctx().find<NavMap>();
-  if (nav == nullptr || nav->mesh == nullptr) {
-    clearDebug(reg);
+void NavigationPlugin::spawnDebug(entt::registry &reg, NavMeshRef &ref) {
+  if (ref.nav.mesh == nullptr) {
+    clearDebug(reg, ref);
     return;
   }
-  spawnDebug(reg, nav->debugGeometry(config.debugColor, config.debugOffsetY));
+  spawnDebug(reg, ref,
+             ref.nav.debugGeometry(config.debugColor, config.debugOffsetY));
 }
 
-void NavigationPlugin::spawnDebug(entt::registry &reg, const DebugGeom &geom) {
-  clearDebug(reg);
+void NavigationPlugin::spawnDebug(entt::registry &reg, NavMeshRef &ref,
+                                  const DebugGeom &geom) {
+  clearDebug(reg, ref);
   if (geom.indices.empty())
     return;
 
   auto mesh = std::make_shared<Mesh>();
   mesh->upload(geom.vertices, geom.indices);
-  debugEntity = reg.create();
-  renderer(reg).spawn(reg, debugEntity, std::move(mesh), getTexture(reg, ""),
+  ref.debug = reg.create();
+  renderer(reg).spawn(reg, ref.debug, std::move(mesh), getTexture(reg, ""),
                       {2.0f, config.debugAlpha, 0.0f, 0.0f});
-  reg.emplace<DebugMesh>(debugEntity);
+  reg.emplace<DebugMesh>(ref.debug);
 }
 
-void NavigationPlugin::clearDebug(entt::registry &reg) {
-  if (reg.valid(debugEntity)) {
-    renderer(reg).despawn(reg, debugEntity);
+void NavigationPlugin::clearDebug(entt::registry &reg, NavMeshRef &ref) {
+  if (reg.valid(ref.debug)) {
+    renderer(reg).despawn(reg, ref.debug);
   }
-  debugEntity = entt::null;
+  ref.debug = entt::null;
+}
+
+NavMeshRef *NavigationPlugin::navFor(entt::registry &reg, NavAgent &agent) {
+  if (agent.walkable == entt::null) {
+    for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
+      if (ref.nav.crowd != nullptr) {
+        agent.walkable = e;
+        break;
+      }
+    }
+  }
+  if (!reg.valid(agent.walkable)) {
+    return nullptr;
+  }
+  auto *ref = reg.try_get<NavMeshRef>(agent.walkable);
+  if (ref == nullptr || ref->nav.crowd == nullptr) {
+    return nullptr;
+  }
+  return ref;
 }
 
 void NavigationPlugin::UI(entt::registry &reg) {
   using namespace ImGui;
   if (Begin("Navigation")) {
-    const auto label = [&reg](entt::entity e) {
-      if (!reg.valid(e) || !reg.all_of<MeshRef>(e))
-        return std::string("<nessuna>");
-      return std::format("#{} - {} verts{}", entt::to_integral(e),
-                         reg.get<MeshRef>(e).mesh->vertices.size(),
-                         reg.all_of<Map>(e) ? " [map]" : "");
-    };
-    if (BeginCombo("mesh", label(target).c_str())) {
-      for (auto [e, meshRef, transform] :
-           reg.view<MeshRef, Transform>(entt::exclude<DebugMesh>).each()) {
-        if (Selectable(label(e).c_str(), e == target))
-          target = e;
+    SeparatorText("walkable");
+    for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
+      if (ref.nav.mesh != nullptr) {
+        Text("#%u: %d poly", entt::to_integral(e), ref.polyCount);
+      } else {
+        Text("#%u: not built", entt::to_integral(e));
       }
-      EndCombo();
     }
 
     SeparatorText("agent");
@@ -493,8 +513,8 @@ void NavigationPlugin::UI(entt::registry &reg) {
               100.0f);
 
     SeparatorText("build");
-    BeginDisabled(pending.valid() || rebuildRequested);
-    if (Button("Rebuild")) {
+    BeginDisabled(pending.valid() || !queue.empty() || rebuildRequested);
+    if (Button("Rebuild all")) {
       rebuildRequested = true;
     }
     EndDisabled();
@@ -515,9 +535,13 @@ void NavigationPlugin::UI(entt::registry &reg) {
     if (Checkbox("draw debug", &config.drawDebug)) {
       overlayRequested = true;
     }
-    if (SliderFloat("alpha", &config.debugAlpha, 0.0f, 1.0f) &&
-        reg.valid(debugEntity) && reg.all_of<MaterialRef>(debugEntity)) {
-      reg.get<MaterialRef>(debugEntity).material.get()->alphaCutoff = config.debugAlpha;
+    if (SliderFloat("alpha", &config.debugAlpha, 0.0f, 1.0f)) {
+      for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
+        if (reg.valid(ref.debug) && reg.all_of<MaterialRef>(ref.debug)) {
+          reg.get<MaterialRef>(ref.debug).material.get()->alphaCutoff =
+              config.debugAlpha;
+        }
+      }
     }
     ColorEdit3("color", &config.debugColor.x);
     bool overlayDirty = IsItemDeactivatedAfterEdit();
@@ -533,15 +557,12 @@ void NavigationPlugin::UI(entt::registry &reg) {
 void NavigationPlugin::update(entt::registry &reg) {
   UI(reg); // prima dell'uscita anticipata: il pannello serve soprattutto
            // quando la navmesh non c'e'.
-  auto *nav = reg.ctx().find<NavMap>();
-  if (nav == nullptr || nav->crowd == nullptr)
-    return;
-
-  const float *extents = nav->crowd->getQueryExtents();
-  const dtQueryFilter *filter = nav->crowd->getFilter(0);
 
   for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
     if (agent.idx >= 0)
+      continue;
+    NavMeshRef *ref = navFor(reg, agent);
+    if (ref == nullptr)
       continue;
     dtCrowdAgentParams ap{};
     ap.radius = config.agentRadius;
@@ -556,29 +577,41 @@ void NavigationPlugin::update(entt::registry &reg) {
     ap.separationWeight = 2.0f;
     // Detour is float-only; Transform::position is double for large-world range.
     const glm::vec3 pos = t.position;
-    agent.idx = nav->crowd->addAgent(&pos.x, &ap);
+    agent.idx = ref->nav.crowd->addAgent(&pos.x, &ap);
   }
 
   for (auto [e, agent, dest] : reg.view<NavAgent, NavDest>().each()) {
     if (agent.idx < 0)
       continue;
-    dtPolyRef ref = 0;
+    NavMeshRef *ref = navFor(reg, agent);
+    if (ref == nullptr)
+      continue;
+    const dtCrowd &crowd = *ref->nav.crowd;
+    dtPolyRef poly = 0;
     float nearest[3] = {0, 0, 0};
-    if (dtStatusFailed(nav->query->findNearestPoly(&dest.pos.x, extents, filter,
-                                                   &ref, nearest)) ||
-        ref == 0) {
+    if (dtStatusFailed(ref->nav.query->findNearestPoly(
+            &dest.pos.x, crowd.getQueryExtents(), crowd.getFilter(0), &poly,
+            nearest)) ||
+        poly == 0) {
       continue;
     }
-    nav->crowd->requestMoveTarget(agent.idx, ref, nearest);
+    ref->nav.crowd->requestMoveTarget(agent.idx, poly, nearest);
     reg.erase<NavDest>(e);
   }
 
-  nav->crowd->update(Core::get()->deltaTime(), nullptr);
+  for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
+    if (ref.nav.crowd != nullptr) {
+      ref.nav.crowd->update(Core::get()->deltaTime(), nullptr);
+    }
+  }
 
   for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
     if (agent.idx < 0)
       continue;
-    const dtCrowdAgent *a = nav->crowd->getAgent(agent.idx);
+    NavMeshRef *ref = navFor(reg, agent);
+    if (ref == nullptr)
+      continue;
+    const dtCrowdAgent *a = ref->nav.crowd->getAgent(agent.idx);
     if (a == nullptr || !a->active)
       continue;
   }

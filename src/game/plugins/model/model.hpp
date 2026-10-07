@@ -1,13 +1,12 @@
 #pragma once
 #include "../render/render.hpp"
 #include "../material/material.hpp"
+#include "../texture/texture.hpp"
 #include "imgui.h"
 #include <Kuru.h>
 #include <filesystem>
 using namespace KR;
 
-// One-shot request: ModelPlugin::start loads `path` into the entity's
-// MeshRef, then removes this.
 struct ModelPath {
   std::string path;
 };
@@ -16,13 +15,22 @@ struct ModelPlugin : public Plugin {
   ModelPlugin() { registerComponent<ModelPath>(); }
   void start(entt::registry &r) override {
     auto &render = renderer(r);
+    // Not spawned yet: spawn it from its paths, as a prop if it has Prop.
     for (entt::entity e : collect(r.view<ModelPath>(entt::exclude<MeshRef>))) {
       const std::string path = r.get<ModelPath>(e).path;
-      if (path.empty())
+      if (path.empty()) {
         continue;
-      r.emplace<MeshRef>(e, loadModel(path));
-      recordPath(r, e, path);
-      r.remove<ModelPath>(e);
+      }
+      std::string texture;
+      if (const auto *t = r.try_get<TexturePath>(e)) {
+        texture = t->val;
+      }
+      if (r.all_of<Prop>(e)) {
+        spawnProp(r, e, path, texture);
+      } else {
+        spawn(r, e, path, texture);
+      }
+      r.remove<ModelPath, TexturePath>(e);
     }
 
     // ModelPath on an existing mesh: swap it.
@@ -45,6 +53,28 @@ struct ModelPlugin : public Plugin {
       recordPath(r, e, path);
       render.retired.push_back(std::move(old));
       r.remove<ModelPath>(e);
+    }
+
+    // TexturePath on an existing mesh: swap its texture. The texture is bound
+    // in the descriptor sets, so the drawable pass below rebuilds them.
+    for (entt::entity e : collect(r.view<MeshRef, TexturePath>())) {
+      const std::string path = r.get<TexturePath>(e).val;
+      r.remove<TexturePath>(e);
+      // ponytail: props share one texture per mesh batch, so they keep theirs;
+      // per-instance textures would need a batch per (mesh, texture).
+      if (path.empty() || r.all_of<Prop>(e)) {
+        continue;
+      }
+      r.get_or_emplace<MaterialRef>(e).material->baseColor = getTexture(r, path);
+      if (auto *own = r.try_get<Renderable>(e)) {
+        RenderPlugin::Retired old{.frame = render.frameCount};
+        old.renderable = std::move(*own);
+        render.retired.push_back(std::move(old));
+        r.remove<Renderable>(e);
+      }
+      auto &model = r.get_or_emplace<Model>(e);
+      assert(path.size() < sizeof(model.texture));
+      snprintf(model.texture, sizeof(model.texture), "%s", path.c_str());
     }
 
     // Props draw instanced through a batch per mesh: make sure theirs exists

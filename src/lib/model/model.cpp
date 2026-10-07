@@ -435,4 +435,40 @@ std::shared_ptr<Mesh> createCube(float halfExtent) {
   mesh->upload(vertices, indices);
   return mesh;
 }
+std::shared_ptr<Mesh> createCone(float radius, float height,
+                                 uint32_t sectors) {
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+  // One flat-shaded triangle at a time, wound like createCube: (b - a) x
+  // (c - a) points out of the cone.
+  const auto triangle = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+    const glm::vec3 normal = glm::normalize(glm::cross(b - a, c - a));
+    for (const glm::vec3 &p : {a, b, c}) {
+      Vertex vertex{};
+      vertex.pos = p;
+      vertex.normal = normal;
+      vertex.color = {1.0f, 1.0f, 1.0f};
+      indices.push_back(static_cast<uint32_t>(vertices.size()));
+      vertices.push_back(vertex);
+    }
+  };
+  const auto rim = [&](uint32_t s) {
+    const float a = glm::two_pi<float>() * static_cast<float>(s) /
+                    static_cast<float>(sectors);
+    return glm::vec3(radius * std::cos(a), height, radius * std::sin(a));
+  };
+  const glm::vec3 tip(0.0f), capCenter(0.0f, height, 0.0f);
+  for (uint32_t s = 0; s < sectors; s++) {
+    triangle(tip, rim(s), rim(s + 1));
+    triangle(capCenter, rim(s + 1), rim(s));
+  }
+
+  auto mesh = std::make_shared<Mesh>();
+  mesh->minY = 0.0f;
+  mesh->maxY = height;
+  mesh->vertices = vertices;
+  mesh->indices = indices;
+  mesh->upload(vertices, indices);
+  return mesh;
+}
 } // namespace KR
