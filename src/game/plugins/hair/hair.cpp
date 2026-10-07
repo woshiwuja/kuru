@@ -6,6 +6,8 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Shaders/HairWrapper.h>
 #include <cmath>
+#include <filesystem>
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -177,23 +179,84 @@ JPH::HairSettings::Material HairPlugin::defaultMaterial() {
   m.mInertiaMultiplier = 10.0f;
   m.mHairRadius = {0.001f, 0.001f};
   m.mWorldTransformInfluence = {0.0f, 1.0f};
-  m.mGridVelocityFactor = {0.05f, 0.01f};
+  m.mGridVelocityFactor = {0.0f, 0.0f};
   m.mGridDensityForceFactor = 0.0f;
   m.mGlobalPose = {0.01f, 0.0f, 0.0f, 0.3f};
   m.mSkinGlobalPose = {1.0f, 0.0f, 0.0f, 0.1f};
-  m.mSimulationStrandsFraction = 0.1f;
+  m.mSimulationStrandsFraction = 0.01f;
   return m;
 }
 
+namespace {
+// False if any shader failed to load: HairShaders::Init leaves those null
+// rather than reporting it.
+bool allLoaded(const JPH::HairShaders &s) {
+  for (const JPH::ComputeShader *shader :
+       {s.mTeleportCS.GetPtr(), s.mApplyDeltaTransformCS.GetPtr(),
+        s.mSkinVerticesCS.GetPtr(), s.mSkinRootsCS.GetPtr(),
+        s.mApplyGlobalPoseCS.GetPtr(), s.mCalculateCollisionPlanesCS.GetPtr(),
+        s.mGridClearCS.GetPtr(), s.mGridAccumulateCS.GetPtr(),
+        s.mGridNormalizeCS.GetPtr(), s.mIntegrateCS.GetPtr(),
+        s.mUpdateRootsCS.GetPtr(), s.mUpdateStrandsCS.GetPtr(),
+        s.mUpdateVelocityCS.GetPtr(), s.mUpdateVelocityIntegrateCS.GetPtr(),
+        s.mCalculateRenderPositionsCS.GetPtr()}) {
+    if (shader == nullptr) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Jolt's SPIR-V, compiled with its library and copied next to the binary
+// (see CMakeLists.txt).
+bool loadJoltShader(const char *name, JPH::Array<JPH::uint8> &out,
+                    JPH::String &error) {
+  const std::string path = assetPath(std::string("shaders/jolt/") + name);
+  std::ifstream file(path, std::ios::binary | std::ios::ate);
+  if (!file) {
+    error = ("missing " + path).c_str();
+    return false;
+  }
+  out.resize(static_cast<size_t>(file.tellg()));
+  file.seekg(0);
+  file.read(reinterpret_cast<char *>(out.data()),
+            static_cast<std::streamsize>(out.size()));
+  return true;
+}
+} // namespace
+
 void HairPlugin::init(entt::registry &reg) {
-  // The CPU backend runs the hair shaders compiled as C++: they have to be
-  // registered before HairShaders::Init looks them up.
-  computeSystem = JPH::CreateComputeSystemCPU().Get();
-  JPH::HairRegisterShaders(
-      static_cast<JPH::ComputeSystemCPU *>(computeSystem.GetPtr()));
-  computeQueue = computeSystem->CreateComputeQueue().Get();
-  shaders = new JPH::HairShaders;
-  shaders->Init(computeSystem);
+  // Vulkan compute (its own device, apart from the renderer's) when it comes
+  // up with every shader; the CPU backend otherwise, which runs the same
+  // shaders compiled as C++ once they're registered.
+  JPH::ComputeSystemResult vk = JPH::CreateComputeSystemVK();
+  if (vk.IsValid()) {
+    computeSystem = vk.Get();
+    computeSystem->mShaderLoader = loadJoltShader;
+    shaders = new JPH::HairShaders;
+    shaders->Init(computeSystem);
+    JPH::ComputeQueueResult queue = computeSystem->CreateComputeQueue();
+    if (allLoaded(*shaders) && queue.IsValid()) {
+      computeQueue = queue.Get();
+      backend = "GPU (Vulkan)";
+    } else {
+      std::cout << "hair: Vulkan compute without its shaders, using the CPU\n";
+      shaders = nullptr;
+      computeSystem = nullptr;
+    }
+  } else {
+    std::cout << "hair: no Vulkan compute (" << vk.GetError()
+              << "), using the CPU\n";
+  }
+  if (computeSystem == nullptr) {
+    computeSystem = JPH::CreateComputeSystemCPU().Get();
+    JPH::HairRegisterShaders(
+        static_cast<JPH::ComputeSystemCPU *>(computeSystem.GetPtr()));
+    computeQueue = computeSystem->CreateComputeQueue().Get();
+    shaders = new JPH::HairShaders;
+    shaders->Init(computeSystem);
+    backend = "CPU";
+  }
   reg.on_destroy<HairInstance>().connect<&retireLines>();
 }
 
@@ -204,22 +267,36 @@ void HairPlugin::start(entt::registry &reg) {
     meshRef.mesh = instance.lines[frameIndex];
   }
 
-  // A groom whose scalp is gone (model swapped) goes too, and on Rebuild
-  // every groom, its HairPath put back so the loop below grows it again.
-  // Spawning and despawning only here: see PhysicsPlugin::start.
+  // A groom whose scalp is gone (model swapped) goes too. On Rebuild every
+  // groom, and from the dropdowns the chosen ones, go with their HairPath put
+  // back so the loop below grows them again. Spawning and despawning only
+  // here: see PhysicsPlugin::start.
+  if (rebuildRequested) {
+    grooms.clear(); // built with the old settings
+    for (auto [e, instance] : reg.view<HairInstance>().each()) {
+      regrow.emplace_back(e, instance.path);
+    }
+  }
+  rebuildRequested = false;
   std::vector<entt::entity> bald;
   for (auto [e, instance] : reg.view<HairInstance>().each()) {
     if (!reg.valid(instance.scalp)) {
       bald.push_back(e);
-    } else if (rebuildRequested) {
-      if (reg.valid(instance.owner)) {
-        reg.emplace_or_replace<HairPath>(instance.owner,
-                                         HairPath{instance.path});
-      }
-      bald.push_back(e);
     }
   }
-  rebuildRequested = false;
+  for (const auto &[e, path] : regrow) {
+    if (!reg.valid(e) || !reg.all_of<HairInstance>(e)) {
+      continue; // gone, or already queued once
+    }
+    const entt::entity owner = reg.get<HairInstance>(e).owner;
+    if (reg.valid(owner)) {
+      reg.emplace_or_replace<HairPath>(owner, HairPath{path});
+    }
+    bald.push_back(e);
+  }
+  regrow.clear();
+  std::sort(bald.begin(), bald.end());
+  bald.erase(std::unique(bald.begin(), bald.end()), bald.end());
   for (entt::entity e : bald) {
     renderer(reg).despawn(reg, e);
   }
@@ -236,30 +313,20 @@ void HairPlugin::start(entt::registry &reg) {
   }
 }
 
-// ponytail: parses and initialises synchronously, a hitch the frame a groom
-// appears; an async load like NavigationPlugin's if that starts to matter.
-entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
-                              entt::entity owner, const std::string &path) {
+// ponytail: a new groom file is parsed and initialised synchronously, a
+// hitch the frame it first appears; an async load like NavigationPlugin's if
+// that starts to matter.
+JPH::Ref<JPH::HairSettings> HairPlugin::groomSettings(const std::string &path,
+                                                      const Mesh &scalp) {
+  const auto key = std::make_pair(path, &scalp);
+  if (const auto it = grooms.find(key); it != grooms.end()) {
+    return it->second;
+  }
   std::vector<std::vector<glm::vec3>> strands = readHairFile(path, maxStrands);
-  const Mesh &scalpMesh = *reg.get<MeshRef>(scalp).mesh;
-  if (strands.empty() || scalpMesh.vertices.empty()) {
-    return entt::null;
+  if (strands.empty() || scalp.vertices.empty()) {
+    return nullptr;
   }
-  fitToScalp(strands, scalpMesh);
-
-  // The model's root: the groom lives in its space and follows its Transform.
-  entt::entity root = scalp;
-  if (const auto *node = reg.try_get<ModelNode>(scalp)) {
-    root = node->root;
-  }
-  Transform transform;
-  if (const auto *t = reg.try_get<Transform>(root)) {
-    transform = *t;
-  }
-  const glm::quat r = glm::normalize(transform.rotation);
-  const JPH::Quat rotation(r.x, r.y, r.z, r.w);
-  const JPH::RVec3 position(transform.position.x, transform.position.y,
-                            transform.position.z);
+  fitToScalp(strands, scalp);
 
   JPH::Array<JPH::HairSettings::SVertex> vertices;
   JPH::Array<JPH::HairSettings::SStrand> simStrands;
@@ -282,33 +349,60 @@ entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
   }
 
   JPH::Ref<JPH::HairSettings> settings = new JPH::HairSettings;
-  for (const Vertex &v : scalpMesh.vertices) {
+  for (const Vertex &v : scalp.vertices) {
     settings->mScalpVertices.push_back(JPH::Float3(v.pos.x, v.pos.y, v.pos.z));
   }
-  for (size_t i = 0; i + 2 < scalpMesh.indices.size(); i += 3) {
+  for (size_t i = 0; i + 2 < scalp.indices.size(); i += 3) {
     settings->mScalpTriangles.push_back(JPH::IndexedTriangleNoMaterial(
-        scalpMesh.indices[i], scalpMesh.indices[i + 1],
-        scalpMesh.indices[i + 2]));
+        scalp.indices[i], scalp.indices[i + 1], scalp.indices[i + 2]));
   }
   settings->mScalpInverseBindPose.push_back(identityJoint);
   JPH::HairSettings::SkinWeight weight;
   weight.mJointIdx = 0;
   weight.mWeight = 1.0f;
-  settings->mScalpSkinWeights.resize(scalpMesh.vertices.size(), weight);
+  settings->mScalpSkinWeights.resize(scalp.vertices.size(), weight);
   settings->mScalpNumSkinWeightsPerVertex = 1;
 
   settings->mMaterials.push_back(material);
   settings->mNumIterationsPerSecond = iterationsPerSecond;
   settings->mSimulationBoundsPadding = JPH::Vec3::sReplicate(0.1f);
-  auto &physics = Core::get()->physicsManager->system;
-  settings->mInitialGravity = rotation.Conjugated() * physics.GetGravity();
+  // In the groom's space. Characters only ever turn about Y, which leaves
+  // gravity as it is, so one groom fits every character sharing it.
+  settings->mInitialGravity =
+      Core::get()->physicsManager->system.GetGravity();
   settings->InitRenderAndSimulationStrands(vertices, simStrands);
   float maxDistSq = 0.0f;
   settings->Init(maxDistSq);
-  std::cout << "hair: " << path << ", " << strands.size()
-            << " strands, roots up to " << std::sqrt(maxDistSq)
-            << " from the scalp\n";
+  std::cout << "hair: " << path << ", " << strands.size() << " strands ("
+            << settings->mSimStrands.size() << " simulated), roots up to "
+            << std::sqrt(maxDistSq) << " from the scalp\n";
   settings->InitCompute(computeSystem);
+  grooms.emplace(key, settings);
+  return settings;
+}
+
+entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
+                              entt::entity owner, const std::string &path) {
+  JPH::Ref<JPH::HairSettings> settings =
+      groomSettings(path, *reg.get<MeshRef>(scalp).mesh);
+  if (settings == nullptr) {
+    return entt::null;
+  }
+
+  // The model's root: the groom lives in its space and follows its Transform.
+  entt::entity root = scalp;
+  if (const auto *node = reg.try_get<ModelNode>(scalp)) {
+    root = node->root;
+  }
+  Transform transform;
+  if (const auto *t = reg.try_get<Transform>(root)) {
+    transform = *t;
+  }
+  const glm::quat r = glm::normalize(transform.rotation);
+  const JPH::Quat rotation(r.x, r.y, r.z, r.w);
+  const JPH::RVec3 position(transform.position.x, transform.position.y,
+                            transform.position.z);
+  auto &physics = Core::get()->physicsManager->system;
 
   HairInstance instance{
       .scalp = scalp, .owner = owner, .path = path, .settings = settings};
@@ -367,21 +461,31 @@ void HairPlugin::update(entt::registry &reg) {
   const float dt = Core::get()->deltaTime();
   const uint32_t frameIndex = reg.ctx().get<FrameContext>().frameIndex;
   auto &physics = Core::get()->physicsManager->system;
-  for (auto [e, instance, t] : reg.view<HairInstance, Transform>().each()) {
+  auto active = reg.view<HairInstance, Transform>();
+
+  // Every groom's dispatches go into the queue, then one run executes them
+  // all, instead of a run per character.
+  for (auto [e, instance, t] : active.each()) {
     instance.settings->mMaterials[0] = material;
     instance.settings->mNumIterationsPerSecond = iterationsPerSecond;
     const glm::quat r = glm::normalize(t.rotation);
     instance.hair->SetPosition(
         JPH::RVec3(t.position.x, t.position.y, t.position.z));
     instance.hair->SetRotation(JPH::Quat(r.x, r.y, r.z, r.w));
-    // Paused: keep the last pose, but still write it below, or the two
-    // buffers would alternate between the last two poses.
     if (dt > 0.0f) {
       instance.hair->Update(dt, identityJoint, &identityJoint, physics,
                             *shaders, computeSystem, computeQueue);
-      computeQueue->ExecuteAndWait();
+    }
+  }
+  // Paused: no step, but the pose is still written below, or the two
+  // buffers would alternate between the last two poses.
+  if (dt > 0.0f && active.begin() != active.end()) {
+    computeQueue->ExecuteAndWait();
+    for (auto [e, instance, t] : active.each()) {
       instance.hair->ReadBackGPUState(computeQueue);
     }
+  }
+  for (auto [e, instance, t] : active.each()) {
     instance.hair->LockReadBackBuffers();
     const JPH::Float3 *positions = instance.hair->GetRenderPositions();
     for (size_t v = 0; v < instance.vertices.size(); v++) {
@@ -415,15 +519,67 @@ void compliance(const char *label, float &value) {
     value = std::pow(10.0f, exponent);
   }
 }
+
+// A combo over the .hair files in models/hair; true with `chosen` set when
+// the user picks one other than `current`.
+bool hairFileCombo(const char *label, const std::string &current,
+                   std::string &chosen) {
+  using namespace ImGui;
+  bool picked = false;
+  if (BeginCombo(label, current.c_str())) {
+    namespace fs = std::filesystem;
+    std::error_code error; // no folder: an empty list, not an exception
+    for (const auto &entry :
+         fs::directory_iterator(assetPath("models/hair"), error)) {
+      if (entry.path().extension() != ".hair") {
+        continue;
+      }
+      const std::string path = "models/hair/" + entry.path().filename().string();
+      if (Selectable(path.c_str(), path == current) && path != current) {
+        chosen = path;
+        picked = true;
+      }
+    }
+    EndCombo();
+  }
+  return picked;
+}
 } // namespace
 
 void HairPlugin::UI(entt::registry &reg) {
   using namespace ImGui;
   Begin("Hair");
-  for (auto [e, instance] : reg.view<HairInstance>().each()) {
-    Text("#%u: %zu strands (%zu simulated)", entt::to_integral(e),
-         instance.settings->mRenderStrands.size(),
-         instance.settings->mSimStrands.size());
+  auto instances = reg.view<HairInstance>();
+  size_t renderVertices = 0;
+  for (auto [e, instance] : instances.each()) {
+    renderVertices += instance.vertices.size();
+  }
+  Text("simulated on the %s", backend);
+  Text("%zu grooms, %zu render vertices a frame",
+       static_cast<size_t>(std::distance(instances.begin(), instances.end())),
+       renderVertices);
+  std::string chosen;
+  std::string current = "(per groom)";
+  if (instances.begin() != instances.end()) {
+    current = instances.get<HairInstance>(*instances.begin()).path;
+  }
+  if (hairFileCombo("file (all)", current, chosen)) {
+    for (auto [e, instance] : instances.each()) {
+      regrow.emplace_back(e, chosen);
+    }
+  }
+  if (TreeNode("grooms")) {
+    for (auto [e, instance] : instances.each()) {
+      PushID(static_cast<int>(entt::to_integral(e)));
+      Text("#%u: %zu strands (%zu simulated)", entt::to_integral(e),
+           instance.settings->mRenderStrands.size(),
+           instance.settings->mSimStrands.size());
+      if (hairFileCombo("file", instance.path, chosen)) {
+        regrow.emplace_back(e, chosen);
+      }
+      PopID();
+    }
+    TreePop();
   }
 
   SeparatorText("simulation");
@@ -460,7 +616,7 @@ void HairPlugin::UI(entt::registry &reg) {
     material = defaults;
     material.mGravityPreloadFactor = preload;
     material.mSimulationStrandsFraction = fraction;
-    iterationsPerSecond = JPH::HairSettings::cDefaultIterationsPerSecond;
+    iterationsPerSecond = defaultIterationsPerSecond;
   }
 
   SeparatorText("groom (applies on Rebuild)");

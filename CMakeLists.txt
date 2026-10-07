@@ -114,9 +114,12 @@ FetchContent_Declare(imguizmo
   GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
   GIT_TAG 18cef5e031d8c6973d80284c67f60549fafd78c1
   SOURCE_SUBDIR no-configure)
-# Jolt's Vulkan backend adds Vulkan_INCLUDE_DIRS as a PUBLIC include dir, which CMake
-# rejects because the SDK sits inside our source tree. ponytail: we don't use Jolt on the GPU
-set(JPH_USE_VK OFF)
+# Vulkan compute: HairPlugin runs Jolt's hair on the GPU (dxc from the SDK compiles
+# its shaders to Jolt/Shaders/*.spv at build time). Jolt adds Vulkan_INCLUDE_DIRS as
+# a PUBLIC include dir, which its install(EXPORT) rejects because the SDK sits inside
+# our source tree: we never install Jolt, so drop the install rules instead.
+set(JPH_USE_VK ON)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 # Shared, same reasoning as SDL3 above: Jolt is linked into both KuruLib.dll
 # and Kuru.exe, and a static Jolt means each binary gets its own separate
 # JPH::Allocate/JPH::Factory::sInstance - the exe's copy never gets the
@@ -212,6 +215,12 @@ foreach(_dir textures models cursors fonts)
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             ${CMAKE_CURRENT_SOURCE_DIR}/assets/${_dir} $<TARGET_FILE_DIR:Kuru>/${_dir})
 endforeach()
+
+# HairPlugin loads Jolt's compute shaders from shaders/jolt/: the .spv files its
+# build compiles into its own source tree (with the .hlsl they came from).
+add_custom_command(TARGET Kuru POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+          ${jolt_SOURCE_DIR}/Jolt/Shaders $<TARGET_FILE_DIR:Kuru>/shaders/jolt)
 
 # render.cpp opens shaders/*.spv relative to the cwd, so emit them next to the binary.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders) # slangc won't create it

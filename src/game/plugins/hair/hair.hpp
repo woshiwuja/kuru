@@ -7,6 +7,7 @@
 #include <Jolt/Physics/Hair/HairShaders.h>
 #include <Kuru.h>
 #include <array>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -40,29 +41,45 @@ struct HairInstance {
 struct HairPlugin : public Plugin {
   HairPlugin() { registerComponent<HairPath>(); }
 
-  // Jolt runs hair as compute shaders; this build has its CPU backend only
-  // (JPH_USE_VK is off in CMakeLists.txt).
+  // Jolt runs hair as compute shaders: on the GPU through Vulkan, or on the
+  // CPU if that isn't available (see init()).
   JPH::Ref<JPH::ComputeSystem> computeSystem;
   JPH::Ref<JPH::ComputeQueue> computeQueue;
   JPH::Ref<JPH::HairShaders> shaders;
+  const char *backend = ""; // for the UI
 
   // Every groom's Jolt material, copied into its settings each update, so
   // edits apply live (as in the sample's menu). The init-only fields
   // (gravity preload, simulated fraction) take a Rebuild.
   JPH::HairSettings::Material material = defaultMaterial();
-  uint32_t iterationsPerSecond = JPH::HairSettings::cDefaultIterationsPerSecond;
+  // Solver cost is linear in this (dt * it iterations a frame). The sample
+  // uses 360; 120 is two a frame at 60 fps, plenty for 1% simulated strands.
+  static constexpr uint32_t defaultIterationsPerSecond = 120;
+  uint32_t iterationsPerSecond = defaultIterationsPerSecond;
 
   // Baked into a groom when it's built: "Rebuild" regrows every groom.
+  // Tuned for many characters: every render vertex (strands x points) is
+  // computed on the CPU each frame and uploaded.
   // ponytail: one set for all grooms; per-groom settings on HairPath if
   // characters need different hair.
-  uint32_t maxStrands = 10000; // of the file's, spread evenly across it
-  uint32_t verticesPerStrand = 32;
+  uint32_t maxStrands = 2000; // of the file's, spread evenly across it
+  uint32_t verticesPerStrand = 16;
   glm::vec3 color{0.22f, 0.13f, 0.07f};
   bool rebuildRequested = false;
+  // Grooms to regrow from another file (the dropdowns), done in start().
+  std::vector<std::pair<entt::entity, std::string>> regrow;
 
-  // The sample's defaults, except collision: off, because the scalp sits
-  // inside the character's own capsule, which would push every strand out.
-  // Needs a head-shaped body to collide with, like the sample's hulls.
+  // Built grooms by file and scalp mesh: characters with the same model and
+  // groom share one (Jolt's Hair only reads its settings), so the file is
+  // parsed once. Emptied on Rebuild.
+  std::map<std::pair<std::string, const Mesh *>, JPH::Ref<JPH::HairSettings>>
+      grooms;
+
+  // Tuned for many characters: the sample's, but 1% of strands simulated
+  // (the rest follow them), no velocity grid (its passes are skipped when
+  // both grid factors are 0) and no collision (the scalp sits inside the
+  // character's own capsule, which would push every strand out; it needs a
+  // head-shaped body, like the sample's hulls).
   static JPH::HairSettings::Material defaultMaterial();
 
   void init(entt::registry &reg) override;
@@ -73,5 +90,9 @@ struct HairPlugin : public Plugin {
   // can't be read.
   entt::entity grow(entt::registry &reg, entt::entity scalp,
                     entt::entity owner, const std::string &path);
+  // The groom `path` fitted to `scalp`, from `grooms` or built into it; null
+  // if the file can't be read.
+  JPH::Ref<JPH::HairSettings> groomSettings(const std::string &path,
+                                            const Mesh &scalp);
   void UI(entt::registry &reg);
 };
