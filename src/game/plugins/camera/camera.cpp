@@ -95,7 +95,7 @@ void Camera::control(FrameContext &frame){
         nearPlane, farPlane);
     frame.proj[1][1] *= -1; // glm is GL-handed, Vulkan's Y points the other way
     // sky_clouds.slang unprojects assuming this (pre-reversal) NDC convention.
-    frame.skyRayProj = frame.proj;
+    frame.projNoReverseZ = frame.proj;
 
     viewCube(frame);
 
@@ -114,7 +114,7 @@ void Camera::control(FrameContext &frame){
 void Camera::viewCube(FrameContext &frame) {
     constexpr float size = 128.0f;
     const ImGuiViewport *vp = ImGui::GetMainViewport();
-    glm::mat4 glProj = frame.skyRayProj;
+    glm::mat4 glProj = frame.projNoReverseZ;
     glProj[1][1] *= -1;
     glm::mat4 identity(1.0f);
     glm::mat4 view = frame.view;

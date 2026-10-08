@@ -268,7 +268,7 @@ void SkyPlugin::updateSkyUniforms(entt::registry &reg) {
       .resolution = {static_cast<float>(frame.extent.width),
                      static_cast<float>(frame.extent.height)},
       .time = skyTime,
-      .invViewRotProj = glm::inverse(frame.skyRayProj * viewRotOnly),
+      .invViewRotProj = glm::inverse(frame.projNoReverseZ * viewRotOnly),
       .sunColor = sky.sunColor,
       .skyTint = sky.color};
   memcpy(skyUniformBuffersMapped[frame.frameIndex], &ubo, sizeof(ubo));

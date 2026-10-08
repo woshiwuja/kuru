@@ -11,18 +11,11 @@
 using namespace KR;
 
 void RenderPlugin::init(entt::registry &reg) {
-  // Other plugins reach the renderer through the registry, not a global.
   reg.ctx().emplace<RenderPlugin *>(this);
-  // Model nodes and hair are Relationship children that get destroyed on
-  // their own: keep the links from naming dead entities.
-  reg.on_destroy<Relationship>().connect<&unlinkDestroyed>();
-  // Model nodes and hair are Relationship children that get destroyed on
-  // their own: keep the links from naming dead entities.
   reg.on_destroy<Relationship>().connect<&unlinkDestroyed>();
   createDescriptorSetLayout();
   createGraphicsPipeline();
   createDescriptorPool();
-  // Both before any makeRenderable: it binds the maps and the frame buffers.
   createShadowResources();
   createFrameUniforms();
 }
@@ -1197,26 +1190,6 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
     drawRenderable(commandBuffer, pipelineLayout, frame.frameIndex,
                    *meshRef.mesh, renderable);
   }
-}
-
-namespace {
-struct TextureLoader {
-  using result_type = std::shared_ptr<Texture>;
-  result_type operator()(const std::string &path) const {
-    return loadTexture(path);
-  }
-};
-using TextureCache = entt::resource_cache<Texture, TextureLoader>;
-} // namespace
-
-std::shared_ptr<Texture> getTexture(entt::registry &reg,
-                                    const std::string &path) {
-  auto *cache = reg.ctx().find<TextureCache>();
-  if (cache == nullptr) {
-    cache = &reg.ctx().emplace<TextureCache>();
-  }
-  return cache->load(entt::hashed_string::value(path.c_str()), path)
-      .first->second.handle();
 }
 
 static void setModel(entt::registry &reg, entt::entity entity,

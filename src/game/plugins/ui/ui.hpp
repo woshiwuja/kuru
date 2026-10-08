@@ -10,7 +10,7 @@ struct Color{
   operator ImVec4() const {
     return ImVec4(r,g,b,a);
   }
-  constexpr Color withAlpha(float alpha) const { return {r, g, b, alpha}; }
+  constexpr Color Alpha(float alpha) const { return {r, g, b, alpha}; }
   static const Color Red, Green, Blue, Yellow, Cyan, Magenta, White, Black,
       Gray, Transparent;
 };
@@ -27,9 +27,10 @@ inline constexpr Color Color::Transparent{0.0f, 0.0f, 0.0f, 0.0f};
 struct UIPlugin : public Plugin {
   void init(entt::registry &reg) override;
   void start(entt::registry &reg) override;
-  void update(entt::registry &reg) override;
   void end(entt::registry &reg) override;
 };
-ImFont *findFont(const char *name);
 
+ImFont *findFont(const char *name);
 void setStyle(ImGuiStyle& style);
+bool dragVec3(const char *label, KR::vec3 &v, float speed = 1.0f);
+bool dragRotation(const char *label, glm::quat &rotation);

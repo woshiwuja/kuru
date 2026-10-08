@@ -9,7 +9,7 @@ namespace KR {
 	vk::Extent2D                   extent        = {};
 	glm::mat4                      view          = glm::mat4(1.0f);
 	glm::mat4                      proj          = glm::mat4(1.0f);
-	glm::mat4                      skyRayProj    = glm::mat4(1.0f);
+	glm::mat4                      projNoReverseZ    = glm::mat4(1.0f);
 	bool                           uiCapturesMouse    = false;
 	bool                           uiCapturesKeyboard = false;
     };

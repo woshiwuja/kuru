@@ -33,7 +33,6 @@ struct ModelPlugin : public Plugin {
       r.remove<ModelPath, TexturePath>(e);
     }
 
-    // ModelPath on an existing mesh: swap it.
     for (entt::entity e : collect(r.view<MeshRef, ModelPath>())) {
       const std::string path = r.get<ModelPath>(e).path;
       if (path.empty())

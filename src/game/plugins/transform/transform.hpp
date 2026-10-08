@@ -8,6 +8,7 @@
 #endif
 #include <glm/gtx/matrix_decompose.hpp>
 #include <Kuru.h>
+#include "../ui/ui.hpp"
 
 using namespace KR;
 
@@ -18,17 +19,6 @@ struct Transform {
   glm::mat4 matrix() const;
 };
 
-inline bool dragVec3(const char *label, KR::vec3 &v, float speed = 1.0f) {
-  return ImGui::DragScalarN(label, ImGuiDataType_Double, &v.x, 3, speed);
-}
-
-inline bool dragRotation(const char *label, glm::quat &rotation) {
-  glm::vec3 euler = glm::degrees(glm::eulerAngles(rotation));
-  if (!ImGui::DragFloat3(label, &euler.x, 1.0f))
-    return false;
-  rotation = glm::quat(glm::radians(euler));
-  return true;
-}
 
 struct GlobalTransform : public Transform {};
 struct LocalTransform : public Transform {};
@@ -56,7 +46,7 @@ struct TransformPlugin : public Plugin {
       return;
     auto &t = view.get<Transform>(*view.begin());
 
-    glm::mat4 proj = frame.skyRayProj;
+    glm::mat4 proj = frame.projNoReverseZ;
     proj[1][1] *= -1;
     const ImGuiViewport *vp = ImGui::GetMainViewport();
     ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
