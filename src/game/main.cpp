@@ -16,6 +16,8 @@
 #include "plugins/material/material.hpp"
 #include "plugins/model/model.hpp"
 #include "plugins/hair/hair.hpp"
+#include "plugins/dialog/dialog.hpp"
+#include "plugins/limb/limb.hpp"
 #include "plugins/picking/picking.hpp"
 #include "plugins/default.hpp"
 #include "plugins/pausing/pausing.hpp"
@@ -47,9 +49,11 @@ int main()
 		app.addPlugin(std::make_unique<NavigationPlugin>());
 		app.addPlugin(std::make_unique<CharacterPlugin>());
 		app.addPlugin(std::make_unique<CharacterControllerPlugin>());
+		app.addPlugin(std::make_unique<LimbPlugin>());
 		app.addPlugin(std::make_unique<InspectorPlugin>());
 		app.addPlugin(std::make_unique<StatPlugin>());
 		app.addPlugin(std::make_unique<InventoryPlugin>());
+		app.addPlugin(std::make_unique<DialoguePlugin>());
 		app.addPlugin(std::make_unique<NamePlugin>());
 		app.addPlugin(std::make_unique<MaterialPlugin>());
 		app.addPlugin(std::make_unique<TexturePlugin>());

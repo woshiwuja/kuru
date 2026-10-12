@@ -10,10 +10,13 @@
 
 using namespace KR;
 struct Character {};
+// Tag: a character the player controls. Only these walk over to talk.
+struct PlayerCharacter {};
 
 struct CharacterPlugin : public Plugin {
   CharacterPlugin(){
     registerComponent<Character>();
+    registerComponent<PlayerCharacter>();
   }
   void init(entt::registry &r) override {}
   void update(entt::registry &r) override;

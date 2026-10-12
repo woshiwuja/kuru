@@ -13,6 +13,7 @@
 #include "character/stats.hpp"
 #include "transform/transform.hpp"
 #include "picking/picking.hpp"
+#include "dialog/dialog.hpp"
 #include <format>
 #include <string>
 
@@ -27,20 +28,25 @@ struct DefaultPlugin : public Plugin {
     reg.emplace<DirectionalLight>(light);
     reg.emplace<Transform>(light);
 
-    entt::entity e = reg.create();
-    reg.emplace<Character>(e);
-    reg.emplace<Name>(e, Name{.fname="coglione"});
-    auto &t = reg.emplace<Transform>(e);
-    t.position = {0, 100, 0};
-    t.rotation = glm::quat(glm::vec3{0.7, 0.7, 0}); // da euler radianti
-    t.scale = glm::vec3{1, 1, 1};
-    auto &bodySettings = reg.emplace<JPH::BodyCreationSettings>(
-        e, new JPH::CapsuleShape(1.0f, 0.5f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
-        JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
-    bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
-    reg.emplace<ModelPath>(e, "models/human.glb");
-    reg.emplace<HairPath>(e, HairPath{.path = "models/hair/curly.hair"});
-    reg.emplace<Pickable>(e);
+    auto character = [&](const char *name, KR::vec3 position) {
+      entt::entity e = reg.create();
+      reg.emplace<Character>(e);
+      reg.emplace<Name>(e, Name{.fname = name});
+      auto &t = reg.emplace<Transform>(e);
+      t.position = position;
+      t.rotation = glm::quat(glm::vec3{0.7, 0.7, 0});
+      t.scale = glm::vec3{1, 1, 1};
+      auto &bodySettings = reg.emplace<JPH::BodyCreationSettings>(
+          e, new JPH::CapsuleShape(1.0f, 0.5f), JPH::RVec3(t.position.x,t.position.y,t.position.z),
+          JPH::Quat::sIdentity(), JPH::EMotionType::Dynamic, MOVING);
+      bodySettings.mMotionQuality = JPH::EMotionQuality::LinearCast;
+      reg.emplace<ModelPath>(e, "models/human.glb");
+      reg.emplace<HairPath>(e, HairPath{.path = "models/hair/curly.hair"});
+      reg.emplace<Pickable>(e);
+      return e;
+    };
+    reg.emplace<Talkable>(character("coglione", {0, 100, 0}), "dialogue/test.yarn");
+    reg.emplace<PlayerCharacter>(character("player", {6, 100, 0}));
 
     auto prop = reg.create();
     reg.emplace<Transform>(prop, Transform{.position = {3.0+.5, 20, 3.0+.5},.scale= {1,1,1}});

@@ -78,7 +78,13 @@ void CharacterControllerPlugin::update(entt::registry &r) {
     for (const SDL_Event &event : input.events) {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
             event.button.button == SDL_BUTTON_RIGHT) {
-            clickMap(r, frame, {event.button.x, event.button.y});
+            const glm::vec2 pixel{event.button.x, event.button.y};
+            const entt::entity hit = pickAt(r, frame, pixel);
+            if (hit != entt::null && r.all_of<Interactable>(hit)) {
+                interactWith(r, hit);
+            } else {
+                clickMap(r, frame, pixel);
+            }
         }
     }
 
@@ -94,15 +100,20 @@ void CharacterControllerPlugin::update(entt::registry &r) {
 }
 
 void CharacterControllerPlugin::walk(entt::registry &r) {
-    // Forces pile up on a body until the next step: none while paused.
     if (Core::get()->paused) {
         return;
     }
     auto &system = Core::get()->physicsManager->system;
     const float dt = Core::get()->deltaTime();
+    for (auto [e, id] : r.view<Character, JPH::BodyID>().each()) {
+        float friction = idleFriction;
+        if (r.all_of<WalkPath>(e)) {
+            friction = walkFriction;
+        }
+        system.GetBodyInterface().SetFriction(id, friction);
+    }
     std::vector<entt::entity> arrived;
     for (auto [e, path, t, id] : r.view<WalkPath, Transform, JPH::BodyID>().each()) {
-        // Corners are on the ground and the body's origin isn't: compare in XZ.
         const glm::vec3 pos = t.position;
         glm::vec2 toCorner{0.0f};
         while (path.next < path.points.size()) {
@@ -203,10 +214,35 @@ void CharacterControllerPlugin::clickMap(entt::registry &r,
             continue;
         }
         for (auto [c, ct] : r.view<Character, Selected, Transform>().each()) {
+            r.remove<InteractWith>(c); // walking elsewhere instead
             std::vector<glm::vec3> points = findPath(nav->nav, ct.position, point);
             if (!points.empty()) {
                 r.emplace_or_replace<WalkPath>(c, std::move(points));
             }
+        }
+    }
+}
+
+// ponytail: the first map with a navmesh; pick the one under `other` if a
+// scene ever has several.
+void CharacterControllerPlugin::interactWith(entt::registry &r, entt::entity other) {
+    const glm::vec3 target = r.get<Transform>(other).position;
+    const NavMeshRef *nav = nullptr;
+    for (auto [e, ref] : r.view<Map, NavMeshRef>().each()) {
+        nav = &ref;
+        break;
+    }
+    for (auto [c, ct] : r.view<PlayerCharacter, Selected, Transform>().each()) {
+        if (c == other) {
+            continue;
+        }
+        r.emplace_or_replace<InteractWith>(c, other);
+        std::vector<glm::vec3> points =
+            nav ? findPath(nav->nav, ct.position, target) : std::vector<glm::vec3>{};
+        if (points.empty()) {
+            r.remove<WalkPath>(c); // already there, or unreachable: the handler decides
+        } else {
+            r.emplace_or_replace<WalkPath>(c, std::move(points));
         }
     }
 }

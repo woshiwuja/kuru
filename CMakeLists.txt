@@ -144,10 +144,21 @@ FetchContent_Declare(recastnavigation
   GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
   GIT_TAG v1.6.0
   GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui imguizmo jolt recastnavigation)
+# Yarn Spinner's compiled dialogue (.yarnc) is a protobuf message. v21 is the
+# last release that doesn't need abseil; it builds protoc too, which
+# generates yarn_spinner.pb.h below.
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "" FORCE) # /MD, like the rest
+FetchContent_Declare(protobuf
+  GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
+  GIT_TAG v21.12
+  GIT_SHALLOW TRUE
+  GIT_SUBMODULES "")
+FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui imguizmo jolt recastnavigation protobuf)
 
 file(GLOB_RECURSE KURU_LIB_SRC src/lib/*.cpp)
 file(GLOB_RECURSE KURU_GAME_SRC src/game/*.cpp)
+list(FILTER KURU_GAME_SRC EXCLUDE REGEX "_test\\.cpp$")
 set(IMGUI_SRC
   ${imgui_SOURCE_DIR}/imgui.cpp
   ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -188,8 +199,59 @@ target_compile_definitions(KuruLib
   PUBLIC VULKAN_HPP_NO_STRUCT_CONSTRUCTORS GLM_FORCE_DEPTH_ZERO_TO_ONE
   PRIVATE TINYGLTF_IMPLEMENTATION STB_IMAGE_IMPLEMENTATION)
 
+# The dialogue plugin's runtime reads ysc's output through this generated code.
+set(YARN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/game/plugins/dialog/lib)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/yarn/yarn_spinner.pb.cc ${CMAKE_CURRENT_BINARY_DIR}/yarn/yarn_spinner.pb.h
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/yarn
+  COMMAND $<TARGET_FILE:protobuf::protoc> -I ${YARN_DIR} --cpp_out=${CMAKE_CURRENT_BINARY_DIR}/yarn ${YARN_DIR}/yarn_spinner.proto
+  DEPENDS ${YARN_DIR}/yarn_spinner.proto protobuf::protoc
+  VERBATIM)
+add_library(YarnSpinner STATIC ${CMAKE_CURRENT_BINARY_DIR}/yarn/yarn_spinner.pb.cc)
+target_include_directories(YarnSpinner PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/yarn)
+target_link_libraries(YarnSpinner PUBLIC protobuf::libprotobuf)
+
+# .yarn -> .yarnc + -Lines.csv. ysc is Yarn Spinner's compiler (.NET); there
+# is no Linux release, so: dotnet tool install -g YarnSpinner.Console
+# --allow-roll-forward (it targets .NET 9). A user-local dotnet in ~/.dotnet
+# isn't found by ysc's launcher unless DOTNET_ROOT points at it.
+find_program(YSC ysc PATHS $ENV{HOME}/.dotnet/tools)
+find_program(DOTNET dotnet PATHS $ENV{HOME}/.dotnet)
+set(_ysc_env "")
+if(DOTNET)
+  get_filename_component(_dotnet_root ${DOTNET} REALPATH)
+  get_filename_component(_dotnet_root ${_dotnet_root} DIRECTORY)
+  set(_ysc_env ${CMAKE_COMMAND} -E env DOTNET_ROOT=${_dotnet_root})
+endif()
+file(GLOB _yarn_files CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/dialogue/*.yarn)
+# A target's COMMANDs run on every build: ysc recompiles every .yarn each
+# make, so nothing stale survives (an edit not seen as one, a ysc update).
+set(_ysc_cmds "")
+if(YSC)
+  foreach(_yarn ${_yarn_files})
+    get_filename_component(_name ${_yarn} NAME_WE)
+    list(APPEND _ysc_cmds COMMAND ${_ysc_env} ${YSC} compile ${_yarn}
+      -o ${CMAKE_CURRENT_BINARY_DIR}/dialogue -n ${_name})
+  endforeach()
+endif()
+if(_yarn_files AND NOT YSC)
+  message(WARNING "ysc not found: assets/dialogue/*.yarn won't be compiled (dotnet tool install -g YarnSpinner.Console)")
+endif()
+add_custom_target(dialogue ALL
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/dialogue
+  ${_ysc_cmds}
+  VERBATIM)
+
+# Plays assets/dialogue/test.yarn in the terminal, picking options from argv.
+# KuruLib only for its include paths: clangd infers dialog.hpp's flags from
+# yarn_spinner.cpp, and may take this target's compile command for it.
+add_executable(yarn_test ${YARN_DIR}/yarn_spinner_test.cpp ${YARN_DIR}/yarn_spinner.cpp)
+target_link_libraries(yarn_test PRIVATE YarnSpinner KuruLib)
+add_dependencies(yarn_test dialogue)
+
 add_executable(Kuru ${KURU_GAME_SRC})
-target_link_libraries(Kuru PRIVATE KuruLib
+add_dependencies(Kuru dialogue)
+target_link_libraries(Kuru PRIVATE KuruLib YarnSpinner
   RecastNavigation::Recast RecastNavigation::Detour
   RecastNavigation::DetourCrowd RecastNavigation::DetourTileCache RecastNavigation::DebugUtils)
 if(MSVC)

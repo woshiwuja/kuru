@@ -105,7 +105,7 @@ struct MapPlugin : public Plugin {
 		}
 		// PhysicsPlugin creates the body and keeps the BodyID on the entity, so
 		// later Transform edits can find it again.
-		reg.emplace<JPH::BodyCreationSettings>(
+		auto &body = reg.emplace<JPH::BodyCreationSettings>(
 		mapEntity,
 		result.Get(),
 		JPH::RVec3(0, 0, 0),          // position
@@ -113,5 +113,8 @@ struct MapPlugin : public Plugin {
 		JPH::EMotionType::Static,     // heightfields are always static
 		KR::NON_MOVING            // your object layer for static geometry
 		);
+		// Jolt multiplies frictions (sqrt): with Jolt's 0.2 here, even a
+		// character at full friction would slide off anything over ~24 deg.
+		body.mFriction = 1.0f;
     }
 };
