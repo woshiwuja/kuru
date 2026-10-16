@@ -12,6 +12,7 @@
 #include <vulkan/vulkan_raii.hpp>
 #include "../physics/physics.hpp"
 #include "../settings/settings.hpp"
+#include "../audio/audio.hpp"
 
 namespace KR {
 
@@ -28,6 +29,7 @@ struct Core {
   std::unique_ptr<Window> window = nullptr;
   std::unique_ptr<EventManager> eventManager = nullptr;
   std::unique_ptr<PhysicsManager> physicsManager = nullptr;
+  std::unique_ptr<AudioManager> audioManager = nullptr;
   AppInfo appInfo = {};
   vk::raii::Context context;
   vk::raii::Instance instance = nullptr;
@@ -45,11 +47,11 @@ struct Core {
   bool paused = false;
   bool frozen = false;
   float deltaTime() const {
-    return paused ? 0.0f : dt; 
+    return paused ? 0.0f : dt;
   }
   float realDeltaTime() const { return dt; }
   float deltaTime(float scale) const {
-    return paused ? 0.0f : dt* scale; 
+    return paused ? 0.0f : dt* scale;
   }
   std::vector<vk::raii::CommandBuffer> commandBuffers;
   std::unique_ptr<Sync> sync = nullptr;
@@ -66,6 +68,7 @@ struct Core {
   void initECS();
   void initPhysics();
   void initGui();
+  void initAudio();
   void shutdownGui();
   void cleanup();
   void createInstance();

@@ -45,6 +45,8 @@ Core::Core() {
   sync = std::make_unique<Sync>();
   std::cerr << "[debug] Core::Core: making PhysicsManager\n" << std::flush;
   physicsManager = std::make_unique<PhysicsManager>();
+  std::cerr << "[debug] Core::Core: making AudioManager\n" << std::flush;
+  audioManager = std::make_unique<AudioManager>();
   std::cerr << "[debug] Load settings\n" << std::flush;
   settings = std::make_unique<Settings>();
   std::cerr << "[debug] Core::Core: done\n" << std::flush;
@@ -71,6 +73,7 @@ void Core::init() {
   std::cerr << "[debug] Core::init: initECS\n" << std::flush;
   initECS();
   std::cerr << "[debug] Core::init: done\n" << std::flush;
+  initAudio();
   running = true;
 }
 
@@ -190,6 +193,9 @@ void Core::initECS() {
   }
 }
 
+void Core::initAudio(){
+    audioManager->init();
+}
 void Core::run() {
   while (running) {
     eventManager->pump();
@@ -201,6 +207,7 @@ void Core::run() {
       loadNow(pendingLoad.c_str());
       pendingLoad.clear();
     }
+    audioManager->update(settings->audio);
     drawFrame();
   }
   device->wait();
@@ -218,6 +225,7 @@ void Core::cleanup() {
   instance = nullptr;
   physicsManager->stop();
   physicsManager = nullptr;
+  audioManager->close();
 }
 
 void Core::createInstance() {

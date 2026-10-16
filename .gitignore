@@ -7,6 +7,10 @@ compile_commands.json
 vulkansdk-linux-x86_64-*/
 *.tar.xz
 
+# FMOD Studio API, same deal
+fmodstudioapi*/
+fmodstudioapi*.tar.gz
+
 # stray, not an asset
 textures/*.pdf
 imgui.ini

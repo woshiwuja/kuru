@@ -2,7 +2,6 @@
 #include "core/core.hpp"
 #include "math/math.hpp"
 #include "common/common.hpp"
-#include "common/material.hpp"
 #include "audio/audio.hpp"
 #include "event/event.hpp"
 #include "graphics/graphics.hpp"

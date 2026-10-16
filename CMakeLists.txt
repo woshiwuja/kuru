@@ -39,6 +39,25 @@ else()
 endif()
 find_package(Vulkan REQUIRED)
 
+# FMOD Studio API, unpacked in the project root like the Vulkan SDK. It isn't on
+# GitHub (download needs an fmod.com account), so no FetchContent. Release libs,
+# not the *L.so logging builds.
+# ponytail: Linux layout only; Windows needs the installer's lib/x64/*_vc.lib + .dll
+file(GLOB _fmod "${CMAKE_SOURCE_DIR}/fmodstudioapi*linux/api")
+if(NOT _fmod)
+  message(FATAL_ERROR "FMOD SDK not found: unpack fmodstudioapi*linux.tar.gz in the project root")
+endif()
+list(GET _fmod 0 _fmod)
+add_library(fmod SHARED IMPORTED)
+set_target_properties(fmod PROPERTIES
+  IMPORTED_LOCATION ${_fmod}/core/lib/x86_64/libfmod.so
+  INTERFACE_INCLUDE_DIRECTORIES ${_fmod}/core/inc)
+add_library(fmodstudio SHARED IMPORTED)
+set_target_properties(fmodstudio PROPERTIES
+  IMPORTED_LOCATION ${_fmod}/studio/lib/x86_64/libfmodstudio.so
+  INTERFACE_INCLUDE_DIRECTORIES ${_fmod}/studio/inc
+  INTERFACE_LINK_LIBRARIES fmod)
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON) # KuruLib is shared; its static deps must be too
 
 include(FetchContent)
@@ -189,7 +208,7 @@ target_include_directories(KuruLib PUBLIC src/lib ${imgui_SOURCE_DIR} ${imgui_SO
 # the loaders, which is fine because they hold no global state (IMG_Init is a
 # deprecated no-op in 3.x and no dynamically-loaded format backends are enabled).
 target_link_libraries(KuruLib PUBLIC Vulkan::Vulkan SDL3::SDL3 SDL3_image::SDL3_image
-  glm::glm EnTT::EnTT Jolt::Jolt
+  glm::glm EnTT::EnTT Jolt::Jolt fmodstudio
   PRIVATE ktx)
 # stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
 target_include_directories(KuruLib PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR})

@@ -1,3 +1,4 @@
+#pragma once
 #include "imgui.h"
 #include "entt/entt.hpp"
 #include "plugin/plugin.hpp"

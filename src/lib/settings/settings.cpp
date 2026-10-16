@@ -5,9 +5,8 @@
 
 namespace KR {
 namespace {
-using json = nlohmann::ordered_json; // save() keeps the file's key order
+using json = nlohmann::ordered_json;
 
-// Only overwrites `out` when the key is there, so absent keys keep defaults.
 template <typename T> void read(const json &j, const char *key, T &out) {
   if (j.contains(key)) {
     j.at(key).get_to(out);
