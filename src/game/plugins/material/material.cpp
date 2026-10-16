@@ -1,5 +1,4 @@
 #include "material.hpp"
-#include "common/material.hpp"
 #include "entt/entity/fwd.hpp"
 using namespace ImGui;
 
