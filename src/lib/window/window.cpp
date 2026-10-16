@@ -9,7 +9,7 @@
 
 namespace KR {
 void Window::init() {
-  SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+  SDL_Init(SDL_INIT_VIDEO); // audio is FMOD (audio/audio.cpp)
   window = SDL_CreateWindow(title.c_str(), width, height,
                             SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | modeToSDL(mode) );
   apply(); 

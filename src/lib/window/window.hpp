@@ -24,12 +24,8 @@ struct Window{
         switch (mode)
         {
         case windowed:
-        return 0;
+            return 0;
             break;
-        // Both start fullscreen: SDL's default is desktop-sized borderless,
-        // apply() then picks a real display mode for exclusive fullscreen.
-        // SDL_WINDOW_BORDERLESS would only drop the title bar, not fill the
-        // screen.
         case fullscreen:
             return SDL_WINDOW_FULLSCREEN;
             break;

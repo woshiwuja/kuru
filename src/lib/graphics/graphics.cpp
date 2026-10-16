@@ -28,6 +28,24 @@ void Graphics::chooseSwapExtent() {
       std::clamp<uint32_t>(height, capabilities.minImageExtent.height,
                            capabilities.maxImageExtent.height)};
 }
+static vk::PresentModeKHR getVSyncSetting(vk::SurfaceKHR surface) {
+  auto core = Core::Core::get();
+  auto &pd = core->device->physicalDevice;
+  vk::PresentModeKHR presentMode = vk::PresentModeKHR::eFifo;
+  if (!core->settings->video.graphics.vsync) {
+    const auto modes = pd.getSurfacePresentModesKHR(surface);
+    const auto has = [&modes](vk::PresentModeKHR m) {
+      return std::ranges::find(modes, m) != modes.end();
+    };
+    if (has(vk::PresentModeKHR::eImmediate)) {
+      presentMode = vk::PresentModeKHR::eImmediate;
+    } else if (has(vk::PresentModeKHR::eMailbox)) {
+      presentMode = vk::PresentModeKHR::eMailbox;
+    }
+  }
+  return presentMode;
+}
+
 void Graphics::createSwapChain(){
       auto core = Core::Core::get();
       auto pd = core->device->physicalDevice;
@@ -40,22 +58,7 @@ void Graphics::createSwapChain(){
           pd.getSurfaceFormatsKHR(*surface);
       chooseSwapSurfaceFormat(availableFormats);
 
-      // vsync: FIFO blocks on the refresh instead of throwing frames away
-      // like mailbox did, and it's the one mode the spec guarantees exists.
-      // Off: immediate (tears, lowest latency), else mailbox, else FIFO anyway.
-      vk::PresentModeKHR presentMode = vk::PresentModeKHR::eFifo;
-      if (!core->settings->video.graphics.vsync) {
-        const auto modes = pd.getSurfacePresentModesKHR(*surface);
-        const auto has = [&modes](vk::PresentModeKHR m) {
-          return std::ranges::find(modes, m) != modes.end();
-        };
-        if (has(vk::PresentModeKHR::eImmediate)) {
-          presentMode = vk::PresentModeKHR::eImmediate;
-        } else if (has(vk::PresentModeKHR::eMailbox)) {
-          presentMode = vk::PresentModeKHR::eMailbox;
-        }
-      }
-
+      auto presentMode = getVSyncSetting(*surface);
       vk::SwapchainCreateInfoKHR swapChainCreateInfo{
           .surface = *surface,
           .minImageCount = swapMinImageCount,

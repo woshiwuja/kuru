@@ -1,12 +1,12 @@
 #include "render.hpp"
 #include "../lighting/lighting.hpp"
+#include "entt/entity/fwd.hpp"
 #include "mesh_registry.hpp"
 #include "model/model.hpp"
 #include "plugin/plugin.hpp"
 #include <Kuru.h>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
-#include "../material/material.hpp"
 
 using namespace KR;
 
@@ -365,16 +365,12 @@ void RenderPlugin::save(entt::registry &reg, SaveFile &file) {
 // Loaded entities have Transform and Model but none of the GPU-side
 // components: spawn them again from the saved paths.
 void RenderPlugin::load(entt::registry &reg, SaveFile &file) {
-  // Saved nodes are stale copies: respawning their root below makes new ones.
   auto nodes = reg.view<ModelNode>();
   reg.destroy(nodes.begin(), nodes.end());
-  auto view = reg.view<Model>();
-  const std::vector<entt::entity> entities(view.begin(), view.end());
-  for (entt::entity e : entities) {
-    const Model model = reg.get<Model>(e); // copy: spawn() replaces it
-    if (model.prop)
+  for (auto [e,model] : reg.view<Model, Prop>().each()) {
       ::spawnProp(reg, e, model.mesh, model.texture);
-    else
+  }
+  for (auto [e,model] : reg.view<Model>(entt::exclude<Prop>).each()) {
       ::spawn(reg, e, model.mesh, model.texture, model.params);
   }
   uint32_t count = 0;

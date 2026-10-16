@@ -7,7 +7,7 @@
 #include <vulkan/vulkan_raii.hpp>
 #include "../lighting/lighting.hpp"
 #include "../transform/transform.hpp"
-
+#include "../material/material.hpp"
 using namespace KR;
 
 struct MeshRef {
@@ -68,12 +68,7 @@ struct Renderable {
 	Renderable &operator=(Renderable &&)      = default;
 };
 
-// What a path-based spawn()/spawnProp() was made from. Plain data, so it is
-// saved, and RenderPlugin::load re-spawns MeshRef/MaterialRef/Renderable from
-// it. Entities spawned from an in-memory mesh have none and aren't restored.
 struct Model {
-	// ponytail: fixed buffers keep it trivially copyable for SaveFile; give
-	// SaveFile string support if paths ever outgrow 127 chars.
 	char mesh[128] = "";
 	char texture[128] = "";
 	glm::vec4 params{0.0f};
@@ -168,6 +163,7 @@ struct RenderPlugin : Plugin {
 	}
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      pipelineLayout      = nullptr;
+	std::vector<vk::raii::Pipeline> pipelines;
 	vk::raii::Pipeline            graphicsPipeline    = nullptr;
 	vk::raii::Pipeline            debugPipeline       = nullptr;
 	vk::raii::Pipeline            debugWirePipeline   = nullptr;
