@@ -365,6 +365,8 @@ JPH::Ref<JPH::HairSettings> HairPlugin::groomSettings(const std::string &path,
 
   settings->mMaterials.push_back(material);
   settings->mNumIterationsPerSecond = iterationsPerSecond;
+  // Far grooms step every 3rd frame (see update()): 1/30 would clamp that.
+  settings->mMaxDeltaTime = 0.1f;
   settings->mSimulationBoundsPadding = JPH::Vec3::sReplicate(0.1f);
   // In the groom's space. Characters only ever turn about Y, which leaves
   // gravity as it is, so one groom fits every character sharing it.
@@ -459,33 +461,70 @@ entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
 void HairPlugin::update(entt::registry &reg) {
   UI(reg);
   const float dt = Core::get()->deltaTime();
-  const uint32_t frameIndex = reg.ctx().get<FrameContext>().frameIndex;
+  const FrameContext &frame = reg.ctx().get<FrameContext>();
+  const uint64_t frameCount = renderer(reg).frameCount;
+  const glm::vec3 eye = glm::inverse(frame.view)[3];
+  const Frustum camera(frame.proj * frame.view);
   auto &physics = Core::get()->physicsManager->system;
   auto active = reg.view<HairInstance, Transform>();
 
+  // On-screen grooms, nearest first; past maxSimulated they stay frozen.
+  // ponytail: frozen hair is rigid; a sine sway on the tips if it shows.
+  std::vector<std::pair<float, entt::entity>> nearest;
+  for (auto [e, instance, t] : active.each()) {
+    const auto [center, radius] =
+        worldBounds(*instance.lines[0], t.matrix(), t.scale);
+    if (camera.visible(center, radius)) {
+      const glm::vec3 d = center - eye;
+      nearest.emplace_back(glm::dot(d, d), e);
+    }
+  }
+  std::sort(nearest.begin(), nearest.end());
+  if (nearest.size() > maxSimulated) {
+    nearest.resize(maxSimulated);
+  }
+  simulatedLastFrame = nearest.size();
+
   // Every groom's dispatches go into the queue, then one run executes them
   // all, instead of a run per character.
-  for (auto [e, instance, t] : active.each()) {
+  std::vector<entt::entity> stepped;
+  for (size_t rank = 0; rank < nearest.size(); rank++) {
+    const entt::entity e = nearest[rank].second;
+    auto &instance = active.get<HairInstance>(e);
+    // Frozen until now: the character moved meanwhile, start from rest.
+    if (instance.lastSimulated + 1 < frameCount) {
+      instance.hair->OnTeleported();
+      instance.pendingDt = 0.0f;
+    }
+    instance.lastSimulated = frameCount;
+    instance.pendingDt += dt;
+    // The nearest 3 step every frame, the next 3 every 2nd, the rest every
+    // 3rd, staggered by entity so a band's steps spread over the frames.
+    const uint32_t interval = std::min<uint32_t>(1 + uint32_t(rank) / 3, 3);
+    if (dt <= 0.0f ||
+        (frameCount + entt::to_integral(e)) % interval != 0) {
+      continue;
+    }
+    // Iterations per step as if it ran every frame: that's the saving.
     instance.settings->mMaterials[0] = material;
-    instance.settings->mNumIterationsPerSecond = iterationsPerSecond;
+    instance.settings->mNumIterationsPerSecond =
+        std::max(iterationsPerSecond / interval, 1u);
+    const Transform &t = active.get<Transform>(e);
     const glm::quat r = glm::normalize(t.rotation);
     instance.hair->SetPosition(
         JPH::RVec3(t.position.x, t.position.y, t.position.z));
     instance.hair->SetRotation(JPH::Quat(r.x, r.y, r.z, r.w));
-    if (dt > 0.0f) {
-      instance.hair->Update(dt, identityJoint, &identityJoint, physics,
-                            *shaders, computeSystem, computeQueue);
-    }
+    instance.hair->Update(instance.pendingDt, identityJoint, &identityJoint,
+                          physics, *shaders, computeSystem, computeQueue);
+    instance.pendingDt = 0.0f;
+    stepped.push_back(e);
   }
-  // Paused: no step, but the pose is still written below, or the two
-  // buffers would alternate between the last two poses.
-  if (dt > 0.0f && active.begin() != active.end()) {
+  if (!stepped.empty()) {
     computeQueue->ExecuteAndWait();
-    for (auto [e, instance, t] : active.each()) {
-      instance.hair->ReadBackGPUState(computeQueue);
-    }
   }
-  for (auto [e, instance, t] : active.each()) {
+  for (entt::entity e : stepped) {
+    auto &instance = active.get<HairInstance>(e);
+    instance.hair->ReadBackGPUState(computeQueue);
     instance.hair->LockReadBackBuffers();
     const JPH::Float3 *positions = instance.hair->GetRenderPositions();
     for (size_t v = 0; v < instance.vertices.size(); v++) {
@@ -493,8 +532,16 @@ void HairPlugin::update(entt::registry &reg) {
                                   positions[v].z};
     }
     instance.hair->UnlockReadBackBuffers();
-    std::memcpy(instance.mapped[frameIndex], instance.vertices.data(),
-                sizeof(Vertex) * instance.vertices.size());
+    instance.uploadsLeft = MAX_FRAMES_IN_FLIGHT;
+  }
+  // A new pose goes into every frame's buffer in turn, or the buffers would
+  // alternate between the last poses while it isn't stepping.
+  for (auto [e, instance, t] : active.each()) {
+    if (instance.uploadsLeft > 0) {
+      std::memcpy(instance.mapped[frame.frameIndex], instance.vertices.data(),
+                  sizeof(Vertex) * instance.vertices.size());
+      instance.uploadsLeft--;
+    }
   }
 }
 
@@ -583,6 +630,13 @@ void HairPlugin::UI(entt::registry &reg) {
   }
 
   SeparatorText("simulation");
+  int budget = static_cast<int>(maxSimulated);
+  if (SliderInt("max simulated", &budget, 0, 64)) {
+    maxSimulated = static_cast<uint32_t>(budget);
+  }
+  SetItemTooltip("Nearest on-screen grooms simulated; the rest stay frozen "
+                 "on the head");
+  Text("%zu simulated this frame", simulatedLastFrame);
   Checkbox("collision", &material.mEnableCollision);
   SetItemTooltip("Off by default: the character's capsule encloses the scalp "
                  "and would push the hair out");

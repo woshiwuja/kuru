@@ -36,6 +36,13 @@ struct HairInstance {
   std::array<std::shared_ptr<Mesh>, MAX_FRAMES_IN_FLIGHT> lines;
   std::array<Vertex *, MAX_FRAMES_IN_FLIGHT> mapped{};
   std::vector<Vertex> vertices; // colours fixed, positions refreshed
+  // Time since its last step: far grooms step every few frames with it.
+  float pendingDt = 0.0f;
+  // Last frame it was among the simulated; out of them it stays frozen in
+  // the model's space, so it moves rigidly with the character.
+  uint64_t lastSimulated = 0;
+  // Frames in flight whose buffer still holds an older pose.
+  uint32_t uploadsLeft = 0;
 };
 
 struct HairPlugin : public Plugin {
@@ -56,6 +63,10 @@ struct HairPlugin : public Plugin {
   // uses 360; 120 is two a frame at 60 fps, plenty for 1% simulated strands.
   static constexpr uint32_t defaultIterationsPerSecond = 120;
   uint32_t iterationsPerSecond = defaultIterationsPerSecond;
+  // Only the nearest on-screen grooms simulate, so the cost stays flat
+  // however many characters there are.
+  uint32_t maxSimulated = 8;
+  size_t simulatedLastFrame = 0; // for the UI
 
   // Baked into a groom when it's built: "Rebuild" regrows every groom.
   // Tuned for many characters: every render vertex (strands x points) is
