@@ -11,6 +11,9 @@ vulkansdk-linux-x86_64-*/
 fmodstudioapi*/
 fmodstudioapi*.tar.gz
 
+# Tracy viewer and tools, the version CMakeLists.txt pins the client to
+tracy-*-linux/
+
 # stray, not an asset
 textures/*.pdf
 imgui.ini

@@ -11,9 +11,20 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <memory>
+#include <cstring>
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyC.h>
 #include <typeinfo>
 
 namespace {
+// The plugin's class name: typeid's, minus the Itanium length prefix.
+const char *pluginName(const KR::Plugin &plugin) {
+  const char *name = typeid(plugin).name();
+  while (isdigit(*name))
+    ++name;
+  return name;
+}
+
 void checkVkResult(VkResult result) {
   if (result != VK_SUCCESS) {
     throw std::runtime_error("imgui vulkan backend: VkResult " +
@@ -27,12 +38,37 @@ namespace KR {
 Core *Core::s_instance = nullptr;
 
 Core::Core() {
+  ZoneScoped;
   assert(s_instance == nullptr && "only one Core may exist at a time");
   s_instance = this;
   // Jolt's allocation hooks are null until this runs; physicsManager below
   // constructs a TempAllocatorImpl that allocates immediately.
   std::cerr << "[debug] Core::Core: RegisterDefaultAllocator\n" << std::flush;
   JPH::RegisterDefaultAllocator();
+#if defined(TRACY_ENABLE) && defined(JPH_EXTERNAL_PROFILE)
+  // Jolt's JPH_PROFILE scopes as Tracy zones, the zone kept in the bytes Jolt
+  // reserves on the stack for each. Names are only known at run time, so the
+  // source location is allocated per zone: skipped while nothing listens.
+  static_assert(sizeof(TracyCZoneCtx) <= 64);
+  JPH::ProfileStartMeasurement = [](const char *name, JPH::uint32 color,
+                                    JPH::uint8 *data) {
+    TracyCZoneCtx zone{};
+    if (TracyCIsConnected) {
+      const uint64_t srcloc = ___tracy_alloc_srcloc_name(
+          0, "Jolt", 4, name, std::strlen(name), name, std::strlen(name),
+          color & 0xffffff);
+      zone = ___tracy_emit_zone_begin_alloc(srcloc, 1);
+    }
+    std::memcpy(data, &zone, sizeof(zone));
+  };
+  JPH::ProfileEndMeasurement = [](JPH::uint8 *data) {
+    TracyCZoneCtx zone;
+    std::memcpy(&zone, data, sizeof(zone));
+    if (zone.active) {
+      ___tracy_emit_zone_end(zone);
+    }
+  };
+#endif
   std::cerr << "[debug] Core::Core: making Window\n" << std::flush;
   window = std::make_unique<Window>(Window{.width = 800, .height = 600});
   std::cerr << "[debug] Core::Core: making EventManager\n" << std::flush;
@@ -63,6 +99,7 @@ Core *Core::get() {
 }
 
 void Core::init() {
+  ZoneScoped;
   settings->load(assetPath("settings.json"));
   std::cerr << "[debug] Core::init: initVulkan\n" << std::flush;
   initVulkan();
@@ -83,6 +120,7 @@ void Core::end() {
 }
 
 void Core::initVulkan() {
+  ZoneScoped;
   std::cerr << "[debug] initVulkan: window->init\n" << std::flush;
   window->width = settings->video.window.width;
   window->height = settings->video.window.height;
@@ -121,6 +159,14 @@ void Core::initVulkan() {
   graphics->createGbufferSampler();
   std::cerr << "[debug] initVulkan: createCommandBuffers\n" << std::flush;
   createCommandBuffers();
+  // Its setup submits once on a frame's command buffer, before any frame
+  // records into it.
+  // ponytail: uncalibrated, so on long captures the GPU timeline can drift
+  // from the CPU's; TracyVkContextCalibrated with VK_KHR_calibrated_timestamps
+  // if that shows.
+  gpuProfiler =
+      TracyVkContext(*device->physicalDevice, *device->device, *device->queue,
+                     *commandBuffers[0]);
   std::cerr << "[debug] initVulkan: sync->init\n" << std::flush;
   sync->init();
   std::cerr << "[debug] initVulkan: done\n" << std::flush;
@@ -132,6 +178,7 @@ void Core::addPlugin(std::unique_ptr<Plugin> plugin) {
 void Core::initPhysics() { physicsManager->init(); };
 
 void Core::initGui() {
+  ZoneScoped;
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   auto &io = ImGui::GetIO();
@@ -183,12 +230,11 @@ void Core::shutdownGui() {
 }
 
 void Core::initECS() {
+  ZoneScoped;
   reg.ctx().emplace<FrameContext>();
   for (auto &plugin : plugins) {
-    const char *name = typeid(*plugin).name();
-    while (isdigit(*name))
-      ++name;
-    std::cerr << "[debug] initECS: plugin->init " << name << "\n" << std::flush;
+    std::cerr << "[debug] initECS: plugin->init " << pluginName(*plugin)
+              << "\n" << std::flush;
     plugin->init(reg);
   }
 }
@@ -197,6 +243,7 @@ void Core::initAudio(){
     audioManager->init();
 }
 void Core::run() {
+  ZoneScoped;
   while (running) {
     eventManager->pump();
     running = !eventManager->quit;
@@ -214,7 +261,10 @@ void Core::run() {
 }
 
 void Core::cleanup() {
+  ZoneScoped;
   device->wait();
+  TracyVkDestroy(gpuProfiler);
+  gpuProfiler = nullptr;
   reg = entt::registry{};
   plugins.clear();
   shutdownGui();
@@ -229,6 +279,7 @@ void Core::cleanup() {
 }
 
 void Core::createInstance() {
+  ZoneScoped;
   vk::ApplicationInfo applicationInfo{.pApplicationName = window->title.c_str(),
                                       .applicationVersion =
                                           VK_MAKE_VERSION(1, 0, 0),
@@ -254,6 +305,7 @@ void Core::createInstance() {
 }
 
 void Core::createCommandBuffers() {
+  ZoneScoped;
   commandBuffers.clear();
   vk::CommandBufferAllocateInfo allocInfo{
       .commandPool = *device->commandPool,
@@ -263,8 +315,12 @@ void Core::createCommandBuffers() {
 }
 
 void Core::recordCommandBuffer(uint32_t imageIndex) {
+  ZoneScoped;
   auto &commandBuffer = commandBuffers[sync->frameIndex];
   commandBuffer.begin({});
+  // Earlier frames' timestamps to Tracy; outside any rendering, as it resets
+  // queries.
+  TracyVkCollect(gpuProfiler, *commandBuffer);
 
   // Everything per-entity is the plugins' job; Core only hands them the frame.
   // view and proj are left to whichever plugin owns the camera.
@@ -273,8 +329,13 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
   frame.frameIndex = sync->frameIndex;
   frame.extent = graphics->swapChainExtent;
   // Outside the pass: this is where uploads and spawning belong.
-  for (auto &plugin : plugins) {
-    plugin->start(reg);
+  {
+    ZoneScopedN("start");
+    TracyVkZone(gpuProfiler, *commandBuffer, "start");
+    for (auto &plugin : plugins) {
+      ZoneTransientN(zone, pluginName(*plugin), true);
+      plugin->start(reg);
+    }
   }
   // Before starting rendering, transition the swapchain image to
   // COLOR_ATTACHMENT_OPTIMAL
@@ -348,11 +409,21 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
       .pDepthAttachment = &depthAttachmentInfo};
   commandBuffer.beginRendering(renderingInfo);
 
-  for (auto &plugin : plugins) {
-    plugin->update(reg);
+  {
+    ZoneScopedN("update");
+    TracyVkZone(gpuProfiler, *commandBuffer, "update");
+    for (auto &plugin : plugins) {
+      ZoneTransientN(zone, pluginName(*plugin), true);
+      plugin->update(reg);
+    }
   }
-  for (auto &plugin : plugins) {
-    plugin->end(reg);
+  {
+    ZoneScopedN("end");
+    TracyVkZone(gpuProfiler, *commandBuffer, "end");
+    for (auto &plugin : plugins) {
+      ZoneTransientN(zone, pluginName(*plugin), true);
+      plugin->end(reg);
+    }
   }
 
   commandBuffer.endRendering();
@@ -369,13 +440,18 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
 }
 
 void Core::drawFrame() {
+  ZoneScoped;
   static auto lastFrameTime = std::chrono::high_resolution_clock::now();
   const auto currentTime = std::chrono::high_resolution_clock::now();
   dt = std::chrono::duration<float>(currentTime - lastFrameTime).count();
   lastFrameTime = currentTime;
 
-  auto fenceResult = device->device.waitForFences(
-      *sync->inFlightFences[sync->frameIndex], vk::True, UINT64_MAX);
+  vk::Result fenceResult;
+  {
+    ZoneScopedN("waitForFences"); // GPU still on this slot's last frame
+    fenceResult = device->device.waitForFences(
+        *sync->inFlightFences[sync->frameIndex], vk::True, UINT64_MAX);
+  }
   if (fenceResult != vk::Result::eSuccess) {
     throw std::runtime_error("failed to wait for fence!");
   }
@@ -416,7 +492,10 @@ void Core::drawFrame() {
       .swapchainCount = 1,
       .pSwapchains = &*graphics->swapChain,
       .pImageIndices = &imageIndex};
-  result = device->queue.presentKHR(presentInfoKHR);
+  {
+    ZoneScopedN("present");
+    result = device->queue.presentKHR(presentInfoKHR);
+  }
   if ((result == vk::Result::eSuboptimalKHR) ||
       (result == vk::Result::eErrorOutOfDateKHR) ||
       graphics->framebufferResized) {
@@ -426,9 +505,11 @@ void Core::drawFrame() {
     assert(result == vk::Result::eSuccess);
   }
   sync->frameIndex = (sync->frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+  FrameMark;
 }
 
 std::vector<const char *> Core::getRequiredInstanceExtensions() const {
+  ZoneScoped;
   uint32_t sdlExtensionCount = 0;
   const char *const *sdlExtensions =
       SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
@@ -445,6 +526,7 @@ std::vector<const char *> Core::getRequiredInstanceExtensions() const {
 }
 
 bool Core::checkValidationLayerSupport() const {
+  ZoneScoped;
   return (std::ranges::any_of(context.enumerateInstanceLayerProperties(),
                               [](vk::LayerProperties const &lp) {
                                 return (strcmp("VK_LAYER_KHRONOS_validation",
@@ -455,6 +537,7 @@ bool Core::checkValidationLayerSupport() const {
 // bytes in that order, so a file is only loadable by a build that registers
 // the same types in the same order.
 void Core::save(const char* path){
+  	ZoneScoped;
   	SaveFile savefile{path, true};
 		savefile(serialTypes().size());
 		for (auto &e : serialTypes()) savefile(e.id);
@@ -465,6 +548,7 @@ void Core::save(const char* path){
 };
 void Core::load(const char *path) { pendingLoad = path; }
 void Core::loadNow(const char *path) {
+  ZoneScoped;
   SaveFile savefile{path, false};
   size_t count = 0;
   savefile(count);

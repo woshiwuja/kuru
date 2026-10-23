@@ -13,11 +13,13 @@
 // We only ever read glTF, so drop the writer rather than link stb_image_write.
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include <tiny_gltf.h>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 
 void Mesh::upload(const std::vector<Vertex> &vertices,
                   const std::vector<uint32_t> &indices) {
+  ZoneScoped;
   assert(!vertices.empty() && !indices.empty());
   auto &device = Core::get()->device;
   indexCount = static_cast<uint32_t>(indices.size());
@@ -62,6 +64,7 @@ void Mesh::upload(const std::vector<Vertex> &vertices,
 namespace {
 
 glm::mat4 nodeLocalMatrix(const tinygltf::Node &node) {
+  ZoneScoped;
   if (node.matrix.size() == 16) {
     glm::mat4 m;
     for (int c = 0; c < 4; c++) {
@@ -96,6 +99,7 @@ struct MeshInstance {
 };
 
 bool readGltf(const std::string &path, tinygltf::Model &model) {
+  ZoneScoped;
   tinygltf::TinyGLTF loader;
   std::string err;
   std::string warn;
@@ -119,6 +123,7 @@ bool readGltf(const std::string &path, tinygltf::Model &model) {
 
 // Every mesh node of the default scene, in scene order.
 std::vector<MeshInstance> meshInstances(const tinygltf::Model &model) {
+  ZoneScoped;
   std::vector<MeshInstance> instances;
   const auto visit = [&](auto &&self, int nodeIndex,
                          const glm::mat4 &parent) -> void {
@@ -198,6 +203,7 @@ struct MaterialTextures {
 std::shared_ptr<Mesh> buildMesh(const tinygltf::Model &model,
                                 const std::vector<MeshInstance> &instances,
                                 MaterialTextures &textures) {
+  ZoneScoped;
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
   std::vector<SubMesh> submeshes;
@@ -373,6 +379,7 @@ std::shared_ptr<Mesh> buildMesh(const tinygltf::Model &model,
 } // namespace
 
 std::shared_ptr<Mesh> loadModel(const std::string &path) {
+  ZoneScoped;
   tinygltf::Model model;
   if (!readGltf(path, model)) {
     return createCube();
@@ -382,6 +389,7 @@ std::shared_ptr<Mesh> loadModel(const std::string &path) {
 }
 
 std::vector<ModelPart> loadModelParts(const std::string &path) {
+  ZoneScoped;
   tinygltf::Model model;
   if (!readGltf(path, model)) {
     return {{path, createCube()}};
@@ -399,6 +407,7 @@ std::vector<ModelPart> loadModelParts(const std::string &path) {
 
 std::shared_ptr<Mesh> createSphere(float radius, uint32_t rings,
                                    uint32_t sectors) {
+  ZoneScoped;
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
 
@@ -447,6 +456,7 @@ std::shared_ptr<Mesh> createSphere(float radius, uint32_t rings,
 }
 
 std::shared_ptr<Mesh> createCube(float halfExtent) {
+  ZoneScoped;
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
 
@@ -497,6 +507,7 @@ std::shared_ptr<Mesh> createCube(float halfExtent) {
 }
 std::shared_ptr<Mesh> createCone(float radius, float height,
                                  uint32_t sectors) {
+  ZoneScoped;
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
   // One flat-shaded triangle at a time, wound like createCube: (b - a) x

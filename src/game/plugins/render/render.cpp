@@ -7,10 +7,12 @@
 #include <Kuru.h>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
+#include <tracy/Tracy.hpp>
 
 using namespace KR;
 
 void RenderPlugin::init(entt::registry &reg) {
+  ZoneScoped;
   reg.ctx().emplace<RenderPlugin *>(this);
   reg.on_destroy<Relationship>().connect<&unlinkDestroyed>();
   createDescriptorSetLayout();
@@ -21,6 +23,7 @@ void RenderPlugin::init(entt::registry &reg) {
 }
 
 void RenderPlugin::createFrameUniforms() {
+  ZoneScoped;
   for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     vk::raii::Buffer buffer = nullptr;
     vk::raii::DeviceMemory memory = nullptr;
@@ -35,6 +38,7 @@ void RenderPlugin::createFrameUniforms() {
 }
 
 void RenderPlugin::createDescriptorSetLayout() {
+  ZoneScoped;
   auto &device = Core::get()->device;
   std::array bindings = {
       vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1,
@@ -66,6 +70,7 @@ void RenderPlugin::createDescriptorSetLayout() {
 
 vk::raii::ShaderModule
 RenderPlugin::createShaderModule(const std::vector<char> &code) const {
+  ZoneScoped;
   vk::ShaderModuleCreateInfo createInfo{
       .codeSize = code.size(),
       .pCode = reinterpret_cast<const uint32_t *>(code.data())};
@@ -73,6 +78,7 @@ RenderPlugin::createShaderModule(const std::vector<char> &code) const {
 }
 
 void RenderPlugin::createGraphicsPipeline() {
+  ZoneScoped;
   auto core = Core::get();
   vk::raii::ShaderModule shaderModule =
       createShaderModule(readFile("shaders/slang.spv"));
@@ -239,6 +245,7 @@ void RenderPlugin::createGraphicsPipeline() {
 }
 
 void RenderPlugin::createDescriptorPool() {
+  ZoneScoped;
   // We need MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT descriptor sets
   std::array poolSize{
       // Two per set: the object's and the frame's.
@@ -260,6 +267,7 @@ void RenderPlugin::createDescriptorPool() {
 // N was used by frames <= N at most, and frame N's fence has been waited once
 // MAX_FRAMES_IN_FLIGHT more frames have started.
 void RenderPlugin::start(entt::registry &reg) {
+  ZoneScoped;
   ++frameCount;
   std::erase_if(retired, [this](const Retired &r) {
     return r.frame + MAX_FRAMES_IN_FLIGHT <= frameCount;
@@ -279,6 +287,7 @@ void RenderPlugin::start(entt::registry &reg) {
 }
 
 void RenderPlugin::update(entt::registry &reg) {
+  ZoneScoped;
   auto *core = Core::get();
   // Nodes go where their root went this frame (physics has run by now).
   for (auto [e, node, t] : reg.view<ModelNode, Transform>().each()) {
@@ -351,6 +360,7 @@ struct MaterialValues {
 };
 
 void RenderPlugin::save(entt::registry &reg, SaveFile &file) {
+  ZoneScoped;
   auto view = reg.view<Model, MaterialRef>();
   // Exact count: a multi-type view's size_hint() is only an upper bound.
   file(static_cast<uint32_t>(std::distance(view.begin(), view.end())));
@@ -365,6 +375,7 @@ void RenderPlugin::save(entt::registry &reg, SaveFile &file) {
 // Loaded entities have Transform and Model but none of the GPU-side
 // components: spawn them again from the saved paths.
 void RenderPlugin::load(entt::registry &reg, SaveFile &file) {
+  ZoneScoped;
   auto nodes = reg.view<ModelNode>();
   reg.destroy(nodes.begin(), nodes.end());
   for (auto [e,model] : reg.view<Model, Prop>().each()) {
@@ -395,6 +406,7 @@ void RenderPlugin::spawn(entt::registry &reg, entt::entity entity,
                          std::shared_ptr<Mesh> mesh,
                          std::shared_ptr<Texture> texture, glm::vec4 params,
                          Transform transform) {
+  ZoneScoped;
   assert(mesh);
   if (!reg.all_of<Transform>(entity)) {
     reg.emplace<Transform>(entity, transform);
@@ -407,6 +419,7 @@ void RenderPlugin::spawnProp(entt::registry &reg, entt::entity entity,
                              std::shared_ptr<Mesh> mesh,
                              std::shared_ptr<Texture> texture,
                              Transform transform) {
+  ZoneScoped;
   assert(mesh && texture);
   propBatch(mesh, texture);
   if (!reg.all_of<Transform>(entity)) {
@@ -419,6 +432,7 @@ void RenderPlugin::spawnProp(entt::registry &reg, entt::entity entity,
 PropBatch &RenderPlugin::propBatch(const std::shared_ptr<Mesh> &mesh,
                                    const std::shared_ptr<Texture> &texture,
                                    std::shared_ptr<Material> material) {
+  ZoneScoped;
   auto [it, fresh] = propBatches.try_emplace(mesh.get());
   if (fresh) {
     it->second.mesh = mesh;
@@ -435,6 +449,7 @@ PropBatch &RenderPlugin::propBatch(const std::shared_ptr<Mesh> &mesh,
 // it right before calling this.
 void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
                           std::shared_ptr<Texture> texture, glm::vec4 params) {
+  ZoneScoped;
   assert(texture);
   Renderable renderable = makeRenderable(*reg.get<MeshRef>(entity).mesh, texture);
   if (!reg.all_of<Transform>(entity)) {
@@ -448,6 +463,7 @@ void RenderPlugin::attach(entt::registry &reg, entt::entity entity,
 
 Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
                                         const std::shared_ptr<Texture> &texture) {
+  ZoneScoped;
   auto core = Core::get();
 
   Renderable renderable;
@@ -551,6 +567,7 @@ Renderable RenderPlugin::makeRenderable(const Mesh &mesh,
 std::shared_ptr<Mesh> RenderPlugin::rootMesh(entt::registry &reg,
                                              entt::entity entity,
                                              const std::string &path) {
+  ZoneScoped;
   if (reg.any_of<MergedModel, Prop>(entity)) {
     return getMesh(reg, path).handle();
   }
@@ -565,6 +582,7 @@ void RenderPlugin::spawnNodes(entt::registry &reg, entt::entity root,
                               const std::string &path,
                               const std::shared_ptr<Texture> &texture,
                               glm::vec4 params) {
+  ZoneScoped;
   const auto it = modelParts.find(path);
   if (reg.any_of<MergedModel, Prop>(root) || it == modelParts.end()) {
     return;
@@ -584,6 +602,7 @@ void RenderPlugin::spawnNodes(entt::registry &reg, entt::entity root,
 }
 
 void RenderPlugin::despawnNodes(entt::registry &reg, entt::entity root) {
+  ZoneScoped;
   if (!reg.all_of<Relationship>(root)) {
     return;
   }
@@ -600,6 +619,7 @@ void RenderPlugin::despawnNodes(entt::registry &reg, entt::entity root) {
 }
 
 void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
+  ZoneScoped;
   Retired r{.frame = frameCount};
   if (auto *c = reg.try_get<Renderable>(entity))
     r.renderable = std::move(*c);
@@ -618,6 +638,7 @@ void RenderPlugin::despawn(entt::registry &reg, entt::entity entity) {
 // its own projection and the shader compares against it directly.
 
 void RenderPlugin::createShadowResources() {
+  ZoneScoped;
   auto core = Core::get();
   auto &graphics = core->graphics;
   graphics->createImage(shadowSize, shadowSize, shadowFormat,
@@ -748,6 +769,7 @@ void RenderPlugin::createShadowResources() {
 
 bool RenderPlugin::shadowMatrix(entt::registry &reg, glm::vec3 center,
                                 glm::mat4 &out) const {
+  ZoneScoped;
   // The first one: the same light updateUniforms copies into dirLights[0].
   auto lights = reg.view<DirectionalLight>();
   if (lights.begin() == lights.end())
@@ -778,6 +800,7 @@ bool RenderPlugin::shadowMatrix(entt::registry &reg, glm::vec3 center,
 // Light matrices for this frame's passes, in the order updateUniforms gathers
 // the lights (view order, MAX_LIGHTS each), so index i here is index i there.
 void RenderPlugin::updateShadowMatrices(entt::registry &reg) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
   // Centred halfExtent ahead of the camera, not on it: the box then spans
   // from the camera to 2 * halfExtent along the view, which is what's on
@@ -837,8 +860,10 @@ void RenderPlugin::updateShadowMatrices(entt::registry &reg) {
 void RenderPlugin::shadowLayerPass(entt::registry &reg, vk::ImageView view,
                                    uint32_t size, const glm::mat4 *viewProj,
                                    uint32_t pass) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
+  TracyVkZone(Core::get()->gpuProfiler, *commandBuffer, "shadow layer");
   const vk::Extent2D extent{size, size};
   vk::RenderingAttachmentInfo depthAttachment{
       .imageView = view,
@@ -892,8 +917,10 @@ void RenderPlugin::shadowLayerPass(entt::registry &reg, vk::ImageView view,
 // Both maps are always cleared and transitioned, even with nothing to draw:
 // every descriptor set names them in the shader-read layout.
 void RenderPlugin::drawShadowPass(entt::registry &reg) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
+  TracyVkZone(Core::get()->gpuProfiler, *commandBuffer, "shadows");
   updateShadowMatrices(reg);
 
   shadowDraws = 0;
@@ -955,6 +982,7 @@ void RenderPlugin::drawShadowPass(entt::registry &reg) {
 }
 
 void RenderPlugin::updateUniforms(entt::registry &reg) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
 
   // Column 3 of the inverse view is the camera's world position. Once per
@@ -1024,6 +1052,7 @@ void RenderPlugin::updateUniforms(entt::registry &reg) {
 // slot's fence, so nothing in flight still reads it.
 static void uploadInstances(PropBatch::InstanceBuffer &inst,
                             const std::vector<glm::mat4> &matrices) {
+  ZoneScoped;
   const auto n = static_cast<uint32_t>(matrices.size());
   if (n > inst.capacity) {
     inst.capacity = std::max({n, inst.capacity * 2, 16u});
@@ -1042,6 +1071,7 @@ static void uploadInstances(PropBatch::InstanceBuffer &inst,
 // The props the camera sees, per batch. In update(), after physics and the
 // camera have moved this frame, and nothing recorded yet reads `instances`.
 void RenderPlugin::fillMainInstances(entt::registry &reg) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
   const Frustum camera(frame.proj * frame.view);
   for (auto &[key, batch] : propBatches)
@@ -1065,6 +1095,7 @@ void RenderPlugin::fillMainInstances(entt::registry &reg) {
 // replaced later this frame. So shadows use last frame's prop transforms.
 void RenderPlugin::fillShadowInstances(
     entt::registry &reg, const std::vector<const glm::mat4 *> &passes) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
   struct Instance {
     PropBatch *batch;
@@ -1108,6 +1139,7 @@ void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
                     const vk::raii::PipelineLayout &layout, uint32_t frameIndex,
                     const Mesh &mesh, const Renderable &renderable,
                     uint32_t instanceCount, uint32_t firstInstance) {
+  ZoneScoped;
   commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer, {0});
   commandBuffer.bindIndexBuffer(*mesh.indexBuffer, 0, vk::IndexType::eUint32);
 
@@ -1131,8 +1163,10 @@ void drawRenderable(const vk::raii::CommandBuffer &commandBuffer,
 }
 
 void RenderPlugin::drawMeshes(entt::registry &reg) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
+  TracyVkZone(Core::get()->gpuProfiler, *commandBuffer, "meshes");
 
   commandBuffer.setViewport(
       0, vk::Viewport(0.0f, 0.0f, static_cast<float>(frame.extent.width),
@@ -1192,6 +1226,7 @@ static void setModel(entt::registry &reg, entt::entity entity,
                      const std::string &meshPath,
                      const std::string &texturePath, glm::vec4 params,
                      bool prop) {
+  ZoneScoped;
   assert(meshPath.size() < sizeof(Model::mesh) &&
          texturePath.size() < sizeof(Model::texture));
   Model m{.params = params, .prop = prop};
@@ -1203,6 +1238,7 @@ static void setModel(entt::registry &reg, entt::entity entity,
 void spawn(entt::registry &reg, entt::entity entity,
            const std::string &meshPath, const std::string &texturePath,
            glm::vec4 params, Transform transform) {
+  ZoneScoped;
   setModel(reg, entity, meshPath, texturePath, params, false);
   auto &render = renderer(reg);
   std::shared_ptr<Texture> fallbackTexture = getTexture(reg, texturePath);

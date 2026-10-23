@@ -14,6 +14,7 @@
 #include "transform/transform.hpp"
 #include "picking/picking.hpp"
 #include "dialog/dialog.hpp"
+#include "terminal/terminal.hpp"
 #include <format>
 #include <string>
 
@@ -53,6 +54,10 @@ struct DefaultPlugin : public Plugin {
     reg.emplace<Prop>(prop);
     reg.emplace<ModelPath>(prop, "primitive:cube");
     reg.emplace<Pickable>(prop);
+
+    auto terminal = reg.create();
+    reg.emplace<Terminal>(terminal);
+    reg.emplace<Name>(terminal, Name{.fname = "terminal"});
   };
   void update(entt::registry &reg) override {}
 };

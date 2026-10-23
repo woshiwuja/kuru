@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <tracy/Tracy.hpp>
 
 namespace {
 
@@ -24,6 +25,7 @@ const JPH::Mat44 identityJoint = JPH::Mat44::sIdentity();
 // from Jolt's Samples/Tests/Hair/HairTest.cpp, with bounds checks added.
 std::vector<std::vector<glm::vec3>> readHairFile(const std::string &path,
                                                  uint32_t maxStrands) {
+  ZoneScoped;
   std::ifstream file(assetPath(path), std::ios::binary);
   const std::vector<uint8_t> data{std::istreambuf_iterator<char>(file), {}};
   constexpr size_t headerSize = 128;
@@ -89,6 +91,7 @@ std::vector<std::vector<glm::vec3>> readHairFile(const std::string &path,
 // head; give HairPath an offset/scale/yaw if a model needs hand-fitting.
 void fitToScalp(std::vector<std::vector<glm::vec3>> &strands,
                 const Mesh &scalp) {
+  ZoneScoped;
   glm::vec3 rootLo(std::numeric_limits<float>::max()), rootHi(-rootLo);
   for (const auto &strand : strands) {
     rootLo = glm::min(rootLo, strand.front());
@@ -116,6 +119,7 @@ void fitToScalp(std::vector<std::vector<glm::vec3>> &strands,
 std::shared_ptr<Mesh> lineMesh(const std::vector<Vertex> &vertices,
                                const std::vector<uint32_t> &indices,
                                Vertex *&mapped) {
+  ZoneScoped;
   auto mesh = std::make_shared<Mesh>();
   // Index buffer and bounds; the device-local vertex buffer is replaced.
   mesh->upload(vertices, indices);
@@ -132,6 +136,7 @@ std::shared_ptr<Mesh> lineMesh(const std::vector<Vertex> &vertices,
 // The scalp node of `e`'s model: `e` itself or one of its children. Null
 // until the model has spawned its nodes.
 entt::entity findScalp(entt::registry &reg, entt::entity e) {
+  ZoneScoped;
   const auto isScalp = [&reg](entt::entity x) {
     const auto *node = reg.try_get<ModelNode>(x);
     return node != nullptr && std::strcmp(node->name, "scalp") == 0;
@@ -153,6 +158,7 @@ entt::entity findScalp(entt::registry &reg, entt::entity e) {
 // The line meshes' GPU buffers outlive the entity until no frame in flight
 // can still be drawing them.
 void retireLines(entt::registry &reg, entt::entity e) {
+  ZoneScoped;
   auto &render = renderer(reg);
   for (auto &mesh : reg.get<HairInstance>(e).lines) {
     RenderPlugin::Retired old{.frame = render.frameCount};
@@ -164,6 +170,7 @@ void retireLines(entt::registry &reg, entt::entity e) {
 } // namespace
 
 JPH::HairSettings::Material HairPlugin::defaultMaterial() {
+  ZoneScoped;
   JPH::HairSettings::Material m;
   m.mEnableCollision = false;
   m.mEnableLRA = true;
@@ -191,6 +198,7 @@ namespace {
 // False if any shader failed to load: HairShaders::Init leaves those null
 // rather than reporting it.
 bool allLoaded(const JPH::HairShaders &s) {
+  ZoneScoped;
   for (const JPH::ComputeShader *shader :
        {s.mTeleportCS.GetPtr(), s.mApplyDeltaTransformCS.GetPtr(),
         s.mSkinVerticesCS.GetPtr(), s.mSkinRootsCS.GetPtr(),
@@ -211,6 +219,7 @@ bool allLoaded(const JPH::HairShaders &s) {
 // (see CMakeLists.txt).
 bool loadJoltShader(const char *name, JPH::Array<JPH::uint8> &out,
                     JPH::String &error) {
+  ZoneScoped;
   const std::string path = assetPath(std::string("shaders/jolt/") + name);
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file) {
@@ -226,6 +235,7 @@ bool loadJoltShader(const char *name, JPH::Array<JPH::uint8> &out,
 } // namespace
 
 void HairPlugin::init(entt::registry &reg) {
+  ZoneScoped;
   // Vulkan compute (its own device, apart from the renderer's) when it comes
   // up with every shader; the CPU backend otherwise, which runs the same
   // shaders compiled as C++ once they're registered.
@@ -261,6 +271,7 @@ void HairPlugin::init(entt::registry &reg) {
 }
 
 void HairPlugin::start(entt::registry &reg) {
+  ZoneScoped;
   // This frame's copy of each groom's lines, before RenderPlugin records it.
   const uint32_t frameIndex = reg.ctx().get<FrameContext>().frameIndex;
   for (auto [e, instance, meshRef] : reg.view<HairInstance, MeshRef>().each()) {
@@ -318,6 +329,7 @@ void HairPlugin::start(entt::registry &reg) {
 // that starts to matter.
 JPH::Ref<JPH::HairSettings> HairPlugin::groomSettings(const std::string &path,
                                                       const Mesh &scalp) {
+  ZoneScoped;
   const auto key = std::make_pair(path, &scalp);
   if (const auto it = grooms.find(key); it != grooms.end()) {
     return it->second;
@@ -385,6 +397,7 @@ JPH::Ref<JPH::HairSettings> HairPlugin::groomSettings(const std::string &path,
 
 entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
                               entt::entity owner, const std::string &path) {
+  ZoneScoped;
   JPH::Ref<JPH::HairSettings> settings =
       groomSettings(path, *reg.get<MeshRef>(scalp).mesh);
   if (settings == nullptr) {
@@ -411,10 +424,15 @@ entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
   instance.hair = std::make_unique<JPH::Hair>(settings.GetPtr(), position,
                                               rotation, MOVING);
   instance.hair->Init(computeSystem);
+  instance.readback =
+      instance.hair->GetRenderPositionsCB()->CreateReadBackBuffer().Get();
+  // update()'s run may still be executing: no recording until it's done.
+  computeQueue->Wait();
   instance.hair->Update(0.0f, identityJoint, &identityJoint, physics, *shaders,
                         computeSystem, computeQueue);
+  computeQueue->ScheduleReadback(instance.readback,
+                                 instance.hair->GetRenderPositionsCB());
   computeQueue->ExecuteAndWait();
-  instance.hair->ReadBackGPUState(computeQueue);
 
   // Lines: one vertex per render vertex, a segment between neighbours of a
   // strand. Each strand a slightly different shade, or the groom reads as
@@ -422,8 +440,8 @@ entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
   instance.vertices.resize(settings->mRenderVertices.size());
   std::vector<uint32_t> indices;
   uint32_t seed = 12345;
-  instance.hair->LockReadBackBuffers();
-  const JPH::Float3 *positions = instance.hair->GetRenderPositions();
+  const auto *positions =
+      instance.readback->Map<JPH::Float3>(JPH::ComputeBuffer::EMode::Read);
   for (const JPH::HairSettings::RStrand &strand : settings->mRenderStrands) {
     seed = seed * 1664525u + 1013904223u;
     const float shade = 0.7f + 0.6f * float(seed >> 8) / float(1u << 24);
@@ -438,7 +456,7 @@ entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
       }
     }
   }
-  instance.hair->UnlockReadBackBuffers();
+  instance.readback->Unmap();
   for (uint32_t f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
     instance.lines[f] = lineMesh(instance.vertices, indices, instance.mapped[f]);
   }
@@ -459,6 +477,7 @@ entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
 // Transform copied from the root, its draw recorded: the buffer is only read
 // at submit).
 void HairPlugin::update(entt::registry &reg) {
+  ZoneScoped;
   UI(reg);
   const float dt = Core::get()->deltaTime();
   const FrameContext &frame = reg.ctx().get<FrameContext>();
@@ -467,6 +486,37 @@ void HairPlugin::update(entt::registry &reg) {
   const Frustum camera(frame.proj * frame.view);
   auto &physics = Core::get()->physicsManager->system;
   auto active = reg.view<HairInstance, Transform>();
+
+  // Last frame's run, executed meanwhile alongside the rendering: one frame
+  // of latency instead of the CPU idling until the GPU is done.
+  {
+    ZoneScopedN("hair wait");
+    computeQueue->Wait();
+  }
+  for (entt::entity e : inFlight) {
+    if (!active.contains(e)) {
+      continue; // despawned since
+    }
+    auto &instance = active.get<HairInstance>(e);
+    const auto *positions =
+        instance.readback->Map<JPH::Float3>(JPH::ComputeBuffer::EMode::Read);
+    for (size_t v = 0; v < instance.vertices.size(); v++) {
+      instance.vertices[v].pos = {positions[v].x, positions[v].y,
+                                  positions[v].z};
+    }
+    instance.readback->Unmap();
+    instance.uploadsLeft = MAX_FRAMES_IN_FLIGHT;
+  }
+  inFlight.clear();
+  // A new pose goes into every frame's buffer in turn, or the buffers would
+  // alternate between the last poses while it isn't stepping.
+  for (auto [e, instance, t] : active.each()) {
+    if (instance.uploadsLeft > 0) {
+      std::memcpy(instance.mapped[frame.frameIndex], instance.vertices.data(),
+                  sizeof(Vertex) * instance.vertices.size());
+      instance.uploadsLeft--;
+    }
+  }
 
   // On-screen grooms, nearest first; past maxSimulated they stay frozen.
   // ponytail: frozen hair is rigid; a sine sway on the tips if it shows.
@@ -480,14 +530,15 @@ void HairPlugin::update(entt::registry &reg) {
     }
   }
   std::sort(nearest.begin(), nearest.end());
-  if (nearest.size() > maxSimulated) {
+  if (!simulate) {
+    nearest.clear();
+  } else if (nearest.size() > maxSimulated) {
     nearest.resize(maxSimulated);
   }
   simulatedLastFrame = nearest.size();
 
   // Every groom's dispatches go into the queue, then one run executes them
   // all, instead of a run per character.
-  std::vector<entt::entity> stepped;
   for (size_t rank = 0; rank < nearest.size(); rank++) {
     const entt::entity e = nearest[rank].second;
     auto &instance = active.get<HairInstance>(e);
@@ -516,39 +567,19 @@ void HairPlugin::update(entt::registry &reg) {
     instance.hair->SetRotation(JPH::Quat(r.x, r.y, r.z, r.w));
     instance.hair->Update(instance.pendingDt, identityJoint, &identityJoint,
                           physics, *shaders, computeSystem, computeQueue);
+    computeQueue->ScheduleReadback(instance.readback,
+                                   instance.hair->GetRenderPositionsCB());
     instance.pendingDt = 0.0f;
-    stepped.push_back(e);
+    inFlight.push_back(e);
   }
-  if (!stepped.empty()) {
-    computeQueue->ExecuteAndWait();
-  }
-  for (entt::entity e : stepped) {
-    auto &instance = active.get<HairInstance>(e);
-    instance.hair->ReadBackGPUState(computeQueue);
-    instance.hair->LockReadBackBuffers();
-    const JPH::Float3 *positions = instance.hair->GetRenderPositions();
-    for (size_t v = 0; v < instance.vertices.size(); v++) {
-      instance.vertices[v].pos = {positions[v].x, positions[v].y,
-                                  positions[v].z};
-    }
-    instance.hair->UnlockReadBackBuffers();
-    instance.uploadsLeft = MAX_FRAMES_IN_FLIGHT;
-  }
-  // A new pose goes into every frame's buffer in turn, or the buffers would
-  // alternate between the last poses while it isn't stepping.
-  for (auto [e, instance, t] : active.each()) {
-    if (instance.uploadsLeft > 0) {
-      std::memcpy(instance.mapped[frame.frameIndex], instance.vertices.data(),
-                  sizeof(Vertex) * instance.vertices.size());
-      instance.uploadsLeft--;
-    }
-  }
+  computeQueue->Execute();
 }
 
 namespace {
 // A Gradient's value along the strand: min at the root end, max at the tip,
 // blending between the two fractions of its length.
 void gradient(const char *label, JPH::HairSettings::Gradient &g, float max) {
+  ZoneScoped;
   using namespace ImGui;
   if (TreeNode(label)) {
     SliderFloat("root", &g.mMin, 0.0f, max, "%.4f");
@@ -561,6 +592,7 @@ void gradient(const char *label, JPH::HairSettings::Gradient &g, float max) {
 
 // A compliance as its base-10 exponent: the useful range spans ten decades.
 void compliance(const char *label, float &value) {
+  ZoneScoped;
   float exponent = std::log10(std::max(value, 1.0e-10f));
   if (ImGui::SliderFloat(label, &exponent, -10.0f, 0.0f, "10^%.2f")) {
     value = std::pow(10.0f, exponent);
@@ -571,6 +603,7 @@ void compliance(const char *label, float &value) {
 // the user picks one other than `current`.
 bool hairFileCombo(const char *label, const std::string &current,
                    std::string &chosen) {
+  ZoneScoped;
   using namespace ImGui;
   bool picked = false;
   if (BeginCombo(label, current.c_str())) {
@@ -594,6 +627,7 @@ bool hairFileCombo(const char *label, const std::string &current,
 } // namespace
 
 void HairPlugin::UI(entt::registry &reg) {
+  ZoneScoped;
   using namespace ImGui;
   Begin("Hair");
   auto instances = reg.view<HairInstance>();
@@ -630,6 +664,9 @@ void HairPlugin::UI(entt::registry &reg) {
   }
 
   SeparatorText("simulation");
+  Checkbox("simulate", &simulate);
+  SetItemTooltip("Off: no hair is simulated, every groom stays frozen on its "
+                 "head");
   int budget = static_cast<int>(maxSimulated);
   if (SliderInt("max simulated", &budget, 0, 64)) {
     maxSimulated = static_cast<uint32_t>(budget);

@@ -31,6 +31,9 @@ struct HairInstance {
   std::string path;
   JPH::Ref<JPH::HairSettings> settings;
   std::unique_ptr<JPH::Hair> hair;
+  // Its render positions copied here, in the same run as the step: the
+  // only thing read back.
+  JPH::Ref<JPH::ComputeBuffer> readback;
   // One line mesh per frame in flight: positions are rewritten every frame
   // through `mapped`, never into one the GPU may still be reading.
   std::array<std::shared_ptr<Mesh>, MAX_FRAMES_IN_FLIGHT> lines;
@@ -66,7 +69,10 @@ struct HairPlugin : public Plugin {
   // Only the nearest on-screen grooms simulate, so the cost stays flat
   // however many characters there are.
   uint32_t maxSimulated = 8;
+  bool simulate = true; // off: every groom frozen on its head
   size_t simulatedLastFrame = 0; // for the UI
+  // Stepped in the run still executing: read back at the next update().
+  std::vector<entt::entity> inFlight;
 
   // Baked into a groom when it's built: "Rebuild" regrows every groom.
   // Tuned for many characters: every render vertex (strands x points) is

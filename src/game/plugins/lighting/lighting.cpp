@@ -4,6 +4,7 @@
 #include <format>
 #include "../transform/transform.hpp"
 #include <glm/gtx/quaternion.hpp> // glm::rotation
+#include <tracy/Tracy.hpp>
 
 using namespace KR;
 
@@ -16,6 +17,7 @@ void LightingPlugin::init(entt::registry &reg) {
 }
 
 void LightingPlugin::update(entt::registry &reg) {
+  ZoneScoped;
   for (auto [e, light] : reg.view<DirectionalLight>().each()) {
     light.direction = glm::vec4(glm::normalize(glm::vec3(light.direction)), 0.0f);
   };
@@ -33,6 +35,7 @@ void LightingPlugin::update(entt::registry &reg) {
 static const glm::vec3 UP{0.0f, 1.0f, 0.0f};
 
 void syncToTransform(entt::registry &reg){
+  ZoneScoped;
   for (auto [e, light, t] : reg.view<DirectionalLight, Transform>().each()) {
     light.direction = glm::vec4(t.rotation * UP, 0.0f);
   };
@@ -47,6 +50,7 @@ void syncToTransform(entt::registry &reg){
 }
 
 void LightingPlugin::UI(entt::registry &reg) {
+  ZoneScoped;
 
   using namespace ImGui;
   Begin("Lights");

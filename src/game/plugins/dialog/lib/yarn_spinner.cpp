@@ -6,10 +6,12 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <tracy/Tracy.hpp>
 
 namespace Yarn {
 
 std::string toString(const Value &v) {
+  ZoneScoped;
   if (const float *f = std::get_if<float>(&v)) {
     return std::format("{}", *f); // shortest form: "1", "1.5"
   }
@@ -23,6 +25,7 @@ std::string toString(const Value &v) {
 }
 
 float toNumber(const Value &v) {
+  ZoneScoped;
   if (const float *f = std::get_if<float>(&v)) {
     return *f;
   }
@@ -36,6 +39,7 @@ float toNumber(const Value &v) {
 }
 
 bool toBool(const Value &v) {
+  ZoneScoped;
   if (const bool *b = std::get_if<bool>(&v)) {
     return *b;
   }
@@ -55,6 +59,7 @@ bool toBool(const Value &v) {
 
 // RFC 4180 rows: quoted fields may hold commas, "" and newlines.
 static std::vector<std::vector<std::string>> parseCsv(const std::string &text) {
+  ZoneScoped;
   std::vector<std::vector<std::string>> rows(1);
   std::string field;
   bool quoted = false;
@@ -89,6 +94,7 @@ static std::vector<std::vector<std::string>> parseCsv(const std::string &text) {
 }
 
 static std::string readFile(const std::string &path) {
+  ZoneScoped;
   std::ifstream f(path, std::ios::binary);
   if (!f) {
     throw std::runtime_error("yarn: can't open " + path);
@@ -99,6 +105,7 @@ static std::string readFile(const std::string &path) {
 }
 
 std::shared_ptr<const Project> Project::load(const std::string &yarnPath) {
+  ZoneScoped;
   std::string base = yarnPath;
   if (const size_t dot = base.rfind('.'); dot != std::string::npos) {
     base.resize(dot);
@@ -117,6 +124,7 @@ std::shared_ptr<const Project> Project::load(const std::string &yarnPath) {
 }
 
 void Dialogue::start(const std::string &nodeName) {
+  ZoneScoped;
   stack.clear();
   callStack.clear();
   pending.clear();
@@ -126,6 +134,7 @@ void Dialogue::start(const std::string &nodeName) {
 }
 
 void Dialogue::next() {
+  ZoneScoped;
   options.clear();
   event = Event::Done;
   running = node != nullptr;
@@ -141,6 +150,7 @@ void Dialogue::next() {
 }
 
 void Dialogue::select(size_t option) {
+  ZoneScoped;
   if (event != Event::Options || option >= pending.size()) {
     throw std::runtime_error("yarn: no option " + std::to_string(option) + " to select");
   }
@@ -151,6 +161,7 @@ void Dialogue::select(size_t option) {
 }
 
 Value Dialogue::variable(const std::string &name) const {
+  ZoneScoped;
   if (auto it = variables.find(name); it != variables.end()) {
     return it->second;
   }
@@ -169,6 +180,7 @@ Value Dialogue::variable(const std::string &name) const {
 }
 
 Value Dialogue::pop() {
+  ZoneScoped;
   if (stack.empty()) {
     throw std::runtime_error("Popped Yarn Value from empty stack");
   }
@@ -178,6 +190,7 @@ Value Dialogue::pop() {
 }
 
 const Value &Dialogue::peek() const {
+  ZoneScoped;
   if (stack.empty()) {
     throw std::runtime_error("yarn: stack underflow");
   }
@@ -185,6 +198,7 @@ const Value &Dialogue::peek() const {
 }
 
 void Dialogue::setNode(const std::string &name) {
+  ZoneScoped;
   auto it = project->program.nodes().find(name);
   if (it == project->program.nodes().end()) {
     throw std::runtime_error("yarn: no node named " + name);
@@ -196,6 +210,7 @@ void Dialogue::setNode(const std::string &name) {
 // The instruction after this one is the node's first: run() returns, and
 // next() increments pc from -1 to 0.
 void Dialogue::jumpToNode(std::string name, bool detour) {
+  ZoneScoped;
   if (name.empty()) {
     name = toString(peek());
   }
@@ -216,6 +231,7 @@ void Dialogue::jumpToNode(std::string name, bool detour) {
 static const std::string trackingHeader = "$Yarn.Internal.TrackingVariable";
 
 static std::string trackingVariable(const Yarn::Node &n) {
+  ZoneScoped;
   for (const auto &h : n.headers()) {
     if (h.key() == trackingHeader) {
       return h.value();
@@ -226,6 +242,7 @@ static std::string trackingVariable(const Yarn::Node &n) {
 
 // Counts the visit, if the script asks for visited()/visited_count() on it.
 void Dialogue::returnFromNode(const Yarn::Node *n) {
+  ZoneScoped;
   if (n == nullptr) {
     return;
   }
@@ -236,6 +253,7 @@ void Dialogue::returnFromNode(const Yarn::Node *n) {
 }
 
 float Dialogue::visitCount(const std::string &nodeName) const {
+  ZoneScoped;
   auto it = project->program.nodes().find(nodeName);
   if (it == project->program.nodes().end()) {
     return 0.0f;
@@ -248,6 +266,7 @@ float Dialogue::visitCount(const std::string &nodeName) const {
 }
 
 void Dialogue::stop() {
+  ZoneScoped;
   returnFromNode(node);
   while (!callStack.empty()) {
     returnFromNode(&project->program.nodes().at(callStack.back().node));
@@ -259,6 +278,7 @@ void Dialogue::stop() {
 
 // Pops `substitutions` values into the line's {0}, {1}, ... markers.
 Line Dialogue::makeLine(const std::string &id, int substitutions) {
+  ZoneScoped;
   std::vector<std::string> subs(substitutions);
   for (int i = substitutions - 1; i >= 0; i--) {
     subs[i] = toString(pop());
@@ -286,6 +306,7 @@ Line Dialogue::makeLine(const std::string &id, int substitutions) {
 }
 
 void Dialogue::run(const Yarn::Instruction &i) {
+  ZoneScoped;
   using I = Yarn::Instruction;
   switch (i.InstructionType_case()) {
   case I::kJumpTo:
@@ -422,6 +443,7 @@ static float integer(float v) { return std::trunc(v); }
 
 // Arguments are on the stack under their count; the result goes back on it.
 void Dialogue::callFunction(const std::string &name) {
+  ZoneScoped;
   const int count = int(toNumber(pop()));
   std::vector<Value> a(count);
   for (int n = count - 1; n >= 0; n--) {

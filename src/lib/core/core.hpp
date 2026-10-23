@@ -10,6 +10,7 @@
 #include <memory>
 #include <vulkan/vulkan_profiles.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <tracy/TracyVulkan.hpp>
 #include "../physics/physics.hpp"
 #include "../settings/settings.hpp"
 #include "../audio/audio.hpp"
@@ -54,6 +55,9 @@ struct Core {
     return paused ? 0.0f : dt* scale;
   }
   std::vector<vk::raii::CommandBuffer> commandBuffers;
+  // Tracy's GPU timestamps on the graphics queue, for TracyVkZone(gpuProfiler,
+  // commandBuffer, "name") wherever commands are recorded.
+  TracyVkCtx gpuProfiler = nullptr;
   std::unique_ptr<Sync> sync = nullptr;
 
   // Declared after the plugins on purpose: entities hold GPU state owned by

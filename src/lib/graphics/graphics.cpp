@@ -4,10 +4,12 @@
 #include "SDL3/SDL_vulkan.h"
 #include <vulkan/vulkan_core.h>
 #include <algorithm>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 void Graphics::init() { createSurface(); }
 void Graphics::createSurface() {
+  ZoneScoped;
   const auto& core = Core::Core::get();
   VkSurfaceKHR s{};
   if (!SDL_Vulkan_CreateSurface(core->window->window, *core->instance, nullptr, &s))
@@ -15,6 +17,7 @@ void Graphics::createSurface() {
   surface = vk::raii::SurfaceKHR(core->instance, s);
 }
 void Graphics::chooseSwapExtent() {
+    ZoneScoped;
     auto core = Core::Core::get();
   if (capabilities.currentExtent.width !=
       std::numeric_limits<uint32_t>::max()) {
@@ -29,6 +32,7 @@ void Graphics::chooseSwapExtent() {
                            capabilities.maxImageExtent.height)};
 }
 static vk::PresentModeKHR getVSyncSetting(vk::SurfaceKHR surface) {
+  ZoneScoped;
   auto core = Core::Core::get();
   auto &pd = core->device->physicalDevice;
   vk::PresentModeKHR presentMode = vk::PresentModeKHR::eFifo;
@@ -47,6 +51,7 @@ static vk::PresentModeKHR getVSyncSetting(vk::SurfaceKHR surface) {
 }
 
 void Graphics::createSwapChain(){
+      ZoneScoped;
       auto core = Core::Core::get();
       auto pd = core->device->physicalDevice;
       capabilities =
@@ -82,6 +87,7 @@ void Graphics::cleanupSwapChain() {
 }
 
 void Graphics::recreateSwapChain() {
+    ZoneScoped;
     const auto& core = Core::Core::get();
     auto pd = core->device->physicalDevice;
     // SDL_GetWindowSizeInPixels reports the size the window will be restored
@@ -105,6 +111,7 @@ void Graphics::recreateSwapChain() {
 }
 
 void Graphics::createImageViews() {
+    ZoneScoped;
     assert(swapChainImageViews.empty());
     vk::ImageViewCreateInfo imageViewCreateInfo{
         .viewType = vk::ImageViewType::e2D,
@@ -118,6 +125,7 @@ void Graphics::createImageViews() {
 }
 
 void Graphics::chooseSwapMinImageCount() {
+    ZoneScoped;
     swapMinImageCount = std::max(3u, capabilities.minImageCount);
     if ((0 < capabilities.maxImageCount) &&
         (capabilities.maxImageCount < swapMinImageCount)) {
@@ -127,6 +135,7 @@ void Graphics::chooseSwapMinImageCount() {
 
 void Graphics::chooseSwapSurfaceFormat(
       const std::vector<vk::SurfaceFormatKHR> &availableFormats) {
+    ZoneScoped;
     assert(!availableFormats.empty());
     const auto formatIt =
         std::ranges::find_if(availableFormats, [](const auto &format) {
@@ -141,6 +150,7 @@ void Graphics::chooseSwapSurfaceFormat(
 }
 
 void Graphics::createDepthResources() {
+    ZoneScoped;
     vk::Format depthFormat = findDepthFormat();
 
     // Depth has to match the colour target's sample count, and it's never
@@ -155,6 +165,7 @@ void Graphics::createDepthResources() {
 }
 
 void Graphics::createNormalResources() {
+    ZoneScoped;
     // Written by RenderPlugin's prepass, sampled by the outline pass. 1x: it is
     // read as a texture, and resolving it would average normals across a
     // silhouette, blunting exactly the discontinuity the outline looks for.
@@ -179,6 +190,7 @@ void Graphics::createNormalResources() {
 }
 
 void Graphics::createColorResources() {
+    ZoneScoped;
     if (msaaSamples == vk::SampleCountFlagBits::e1) {
       // Nothing to resolve from; the pass renders straight into the swapchain.
       colorImageView = nullptr;
@@ -196,6 +208,7 @@ void Graphics::createColorResources() {
 }
 
 void Graphics::chooseMsaaSamples() {
+    ZoneScoped;
     const auto &core = Core::Core::get();
     const vk::PhysicalDeviceLimits &limits =
         core->device->physicalDevice.getProperties().limits;
@@ -219,6 +232,7 @@ void Graphics::chooseMsaaSamples() {
 vk::Format Graphics::findSupportedFormat(const std::vector<vk::Format> &candidates,
                                  vk::ImageTiling tiling,
                                  vk::FormatFeatureFlags features) const {
+    ZoneScoped;
     const auto& core = Core::Core::get();
     for (const auto format : candidates) {
       vk::FormatProperties props =
@@ -238,6 +252,7 @@ vk::Format Graphics::findSupportedFormat(const std::vector<vk::Format> &candidat
 }
 
 vk::Format Graphics::findDepthFormat() const {
+    ZoneScoped;
     return findSupportedFormat(
         {vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
          vk::Format::eD24UnormS8Uint},
@@ -250,6 +265,7 @@ void Graphics::createImage(uint32_t width, uint32_t height, vk::Format format,
                    vk::MemoryPropertyFlags properties, vk::raii::Image &image,
                    vk::raii::DeviceMemory &imageMemory,
                    vk::SampleCountFlagBits samples, uint32_t layers) {
+    ZoneScoped;
     const auto& core = Core::Core::get();
     // Defaults to e1 on purpose: every texture goes through here, and a
     // multisampled image can be neither copied into nor sampled by a shader.
@@ -278,6 +294,7 @@ void Graphics::createImage(uint32_t width, uint32_t height, vk::Format format,
 
 vk::raii::ImageView Graphics::createImageView(vk::raii::Image &image, vk::Format format,
                                       vk::ImageAspectFlags aspectFlags) {
+    ZoneScoped;
     const auto& core = Core::Core::get();
     vk::ImageViewCreateInfo viewInfo{
         .image = *image,
@@ -288,6 +305,7 @@ vk::raii::ImageView Graphics::createImageView(vk::raii::Image &image, vk::Format
 }
 
 void Graphics::createTextureSampler() {
+    ZoneScoped;
     const auto &device = Core::Core::get()->device;
     vk::PhysicalDeviceProperties properties = device->physicalDevice.getProperties();
     vk::SamplerCreateInfo samplerInfo{
@@ -306,6 +324,7 @@ void Graphics::createTextureSampler() {
 }
 
 void Graphics::createGbufferSampler() {
+    ZoneScoped;
     const auto &device = Core::Core::get()->device;
     vk::SamplerCreateInfo samplerInfo{
         .magFilter = vk::Filter::eLinear,

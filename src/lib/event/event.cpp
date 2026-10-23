@@ -1,10 +1,12 @@
 #include "event.hpp"
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 
 void EventManager::pump() {
+  ZoneScoped;
   mouseDeltaX = 0.0f;
   mouseDeltaY = 0.0f;
   wheel = 0.0f;
@@ -39,6 +41,7 @@ bool EventManager::down(SDL_Scancode key) const {
 }
 
 bool EventManager::pressed(SDL_Scancode key) const {
+  ZoneScoped;
   for (const SDL_Event &event : events) {
     if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
         event.key.scancode == key) {

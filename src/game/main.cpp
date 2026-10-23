@@ -24,6 +24,7 @@
 #include "plugins/settings/settings.hpp"
 #include "plugins/save/save.hpp"
 #include "plugins/physics/physics.hpp"
+#include "plugins/terminal/terminal.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -54,11 +55,12 @@ int main()
 		app.addPlugin(std::make_unique<StatPlugin>());
 		app.addPlugin(std::make_unique<InventoryPlugin>());
 		app.addPlugin(std::make_unique<DialoguePlugin>());
+		app.addPlugin(std::make_unique<TerminalPlugin>());
 		app.addPlugin(std::make_unique<NamePlugin>());
 		app.addPlugin(std::make_unique<MaterialPlugin>());
 		app.addPlugin(std::make_unique<TexturePlugin>());
 		app.addPlugin(std::make_unique<ModelPlugin>());
-		app.addPlugin(std::make_unique<HairPlugin>()); // after Physics/Render/Model: see HairPlugin::update
+		//app.addPlugin(std::make_unique<HairPlugin>()); // after Physics/Render/Model: see HairPlugin::update
 		app.addPlugin(std::make_unique<PickingPlugin>()); // after TransformPlugin: see update()
 		app.addPlugin(std::make_unique<SavePlugin>()); // before PausingPlugin: it reads SaveMenu
 		app.addPlugin(std::make_unique<SettingsPlugin>()); // before PausingPlugin: it reads SettingsMenu

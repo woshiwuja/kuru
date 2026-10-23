@@ -1,10 +1,12 @@
 #include "outline.hpp"
 #include "../render/render.hpp"
 #include "imgui.h"
+#include <tracy/Tracy.hpp>
 
 using namespace KR;
 
 void OutlinePlugin::init(entt::registry &reg) {
+  ZoneScoped;
   render = &renderer(reg);
   createNormalPipeline();
   createOutlineDescriptorSetLayout();
@@ -21,6 +23,7 @@ void OutlinePlugin::start(entt::registry &reg) {
 }
 
 void OutlinePlugin::update(entt::registry &reg) {
+    ZoneScoped;
     if (enabled) {
       drawOutline(reg);
     }
@@ -32,6 +35,7 @@ void OutlinePlugin::update(entt::registry &reg) {
 }
 
 void OutlinePlugin::createNormalPipeline() {
+  ZoneScoped;
   auto core = Core::get();
   vk::raii::ShaderModule shaderModule =
       render->createShaderModule(readFile("shaders/outline.spv"));
@@ -107,6 +111,7 @@ void OutlinePlugin::createNormalPipeline() {
 }
 
 void OutlinePlugin::createOutlineDescriptorSetLayout() {
+  ZoneScoped;
   std::array bindings = {
       vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eSampledImage, 1,
                                      vk::ShaderStageFlagBits::eFragment,
@@ -122,6 +127,7 @@ void OutlinePlugin::createOutlineDescriptorSetLayout() {
 }
 
 void OutlinePlugin::createOutlinePipeline() {
+  ZoneScoped;
   auto core = Core::get();
   vk::raii::ShaderModule shaderModule =
       render->createShaderModule(readFile("shaders/outline.spv"));
@@ -209,6 +215,7 @@ void OutlinePlugin::createOutlinePipeline() {
 }
 
 void OutlinePlugin::createOutlineDescriptorSet() {
+  ZoneScoped;
   auto core = Core::get();
   std::array poolSize{vk::DescriptorPoolSize(
                           vk::DescriptorType::eSampledImage, 1),
@@ -231,10 +238,12 @@ void OutlinePlugin::createOutlineDescriptorSet() {
 }
 
 void OutlinePlugin::drawNormalPrepass(entt::registry &reg) {
+  ZoneScoped;
   auto core = Core::get();
   auto &graphics = core->graphics;
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
+  TracyVkZone(Core::get()->gpuProfiler, *commandBuffer, "outline normals");
 
   // The view is recreated on resize; recreateSwapChain waits for the device to
   // go idle first, so rewriting the set here is safe.
@@ -328,8 +337,10 @@ void OutlinePlugin::drawNormalPrepass(entt::registry &reg) {
 }
 
 void OutlinePlugin::drawOutline(entt::registry &reg) {
+  ZoneScoped;
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
+  TracyVkZone(Core::get()->gpuProfiler, *commandBuffer, "outline");
 
   outlinePush.resolution = {static_cast<float>(frame.extent.width),
                             static_cast<float>(frame.extent.height)};

@@ -2,6 +2,7 @@
 #include <fmod_errors.h>
 #include <iostream>
 #include <stdexcept>
+#include <tracy/Tracy.hpp>
 
 
 namespace KR {
@@ -13,6 +14,7 @@ void AudioManager::init() {
 }
 
 void AudioManager::close() {
+  ZoneScoped;
   if (system == nullptr) {
     return;
   }
@@ -22,6 +24,7 @@ void AudioManager::close() {
 }
 
 void AudioManager::update(const Settings::Audio &settings) {
+  ZoneScoped;
   FMOD::System *core = nullptr;
   FMOD::ChannelGroup *master = nullptr;
   if (system->getCoreSystem(&core) == FMOD_OK &&
@@ -38,6 +41,7 @@ void AudioManager::loadBank(const std::string &path) {
 }
 
 AudioTrack AudioManager::play(const std::string &eventPath) {
+  ZoneScoped;
   AudioTrack track;
   FMOD::Studio::EventDescription *desc = nullptr;
   FMOD_RESULT result = system->getEvent(eventPath.c_str(), &desc);

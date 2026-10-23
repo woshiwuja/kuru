@@ -1,8 +1,10 @@
 #include "texture.hpp"
 #include "entt/entity/fwd.hpp"
+#include <tracy/Tracy.hpp>
 using TextureCache = entt::resource_cache<Texture, TextureLoader>;
 std::shared_ptr<Texture> getTexture(entt::registry &reg,
                                     const std::string &path) {
+  ZoneScoped;
   auto *cache = reg.ctx().find<TextureCache>();
   if (cache == nullptr) {
     cache = &reg.ctx().emplace<TextureCache>();
@@ -12,6 +14,7 @@ std::shared_ptr<Texture> getTexture(entt::registry &reg,
 }
 
 void TexturePlugin::UI(entt::registry &r){
+    ZoneScoped;
     using namespace ImGui;
     namespace fs = std::filesystem;
     Begin("Texture");

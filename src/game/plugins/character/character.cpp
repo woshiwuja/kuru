@@ -6,7 +6,9 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <vector>
+#include <tracy/Tracy.hpp>
 void CharacterPlugin::UI(entt::registry &r){
+  ZoneScoped;
   using namespace ImGui;
   Begin("Characters");
   if (Button("New Character"))
@@ -15,6 +17,7 @@ void CharacterPlugin::UI(entt::registry &r){
 }
 
 void clean(entt::registry &r){
+    ZoneScoped;
     std::vector<entt::entity> fallen;
     for(auto [e,t,b] : r.view<Character, Transform, JPH::BodyID>().each()){
         if (t.position.y <= -1000){
@@ -32,6 +35,7 @@ void CharacterPlugin::update(entt::registry &r) {
 }
 
 entt::entity CharacterPlugin::newCharacter(entt::registry &r){
+  ZoneScoped;
   auto e = r.create();
   r.emplace<Character>(e);
   r.emplace<Name>(e, Name{.fname= "New",.lname="Name"});

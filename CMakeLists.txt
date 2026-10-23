@@ -146,6 +146,9 @@ set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 # copy, so `new`ing any Jolt type from exe-side code (e.g. DefaultPlugin's
 # SphereShape) calls through a null allocator function pointer and crashes.
 set(JPH_BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+# Jolt's JPH_PROFILE scopes go to Tracy (hooked up in Core::Core) instead of
+# its own profiler.
+set(JPH_USE_EXTERNAL_PROFILE ON CACHE BOOL "" FORCE)
 # Jolt's CMakeLists lives in Build/, not the repo root
 FetchContent_Declare(jolt
   GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
@@ -173,7 +176,33 @@ FetchContent_Declare(protobuf
   GIT_TAG v21.12
   GIT_SHALLOW TRUE
   GIT_SUBMODULES "")
-FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui imguizmo jolt recastnavigation protobuf)
+# libghostty-vt (terminal emulation for the terminal plugin). Its CMakeLists just
+# runs `zig build -Demit-lib-vt`, and ghostty insists on zig 0.16.x exactly, so
+# fetch that zig instead of trusting whatever is on PATH.
+# ponytail: x86_64 Linux zig only; Windows needs the zig-x86_64-windows-0.16.0.zip
+FetchContent_Declare(zig
+  URL https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+  URL_HASH SHA256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+  SOURCE_SUBDIR no-configure)
+FetchContent_MakeAvailable(zig)
+set(ZIG_EXECUTABLE ${zig_SOURCE_DIR}/zig CACHE FILEPATH "" FORCE)
+FetchContent_Declare(ghostty
+  GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
+  GIT_TAG f64f4aca2c29b554d111b36c3d946a9bddd159ff) # ghostling's pin: terminal.cpp is a port of its main.c
+FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui imguizmo jolt recastnavigation protobuf ghostty)
+# Tracy profiler client. Shared, same reasoning as SDL3/Jolt: both KuruLib and
+# Kuru record zones, and Tracy keeps one process-wide queue. On demand: no data
+# is collected until the viewer (tracy-*-linux, same version) connects.
+# -DTRACY_ENABLE=OFF compiles every zone macro away; Tracy's own default is OFF.
+set(TRACY_ENABLE ON CACHE BOOL "Enable profiling")
+set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS ON)
+FetchContent_Declare(tracy
+  GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+  GIT_TAG v0.14.1 # same as the viewer in tracy-*-linux: the protocol must match
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(tracy)
+set(BUILD_SHARED_LIBS OFF)
 
 file(GLOB_RECURSE KURU_LIB_SRC src/lib/*.cpp)
 file(GLOB_RECURSE KURU_GAME_SRC src/game/*.cpp)
@@ -208,7 +237,7 @@ target_include_directories(KuruLib PUBLIC src/lib ${imgui_SOURCE_DIR} ${imgui_SO
 # the loaders, which is fine because they hold no global state (IMG_Init is a
 # deprecated no-op in 3.x and no dynamically-loaded format backends are enabled).
 target_link_libraries(KuruLib PUBLIC Vulkan::Vulkan SDL3::SDL3 SDL3_image::SDL3_image
-  glm::glm EnTT::EnTT Jolt::Jolt fmodstudio
+  glm::glm EnTT::EnTT Jolt::Jolt fmodstudio Tracy::TracyClient
   PRIVATE ktx)
 # stb first: tinygltf vendors an older stb_image.h and this shadows it with one copy
 target_include_directories(KuruLib PRIVATE ${stb_SOURCE_DIR} ${tinygltf_SOURCE_DIR})
@@ -270,7 +299,7 @@ add_dependencies(yarn_test dialogue)
 
 add_executable(Kuru ${KURU_GAME_SRC})
 add_dependencies(Kuru dialogue)
-target_link_libraries(Kuru PRIVATE KuruLib YarnSpinner
+target_link_libraries(Kuru PRIVATE KuruLib YarnSpinner ghostty-vt-static util # util: forkpty
   RecastNavigation::Recast RecastNavigation::Detour
   RecastNavigation::DetourCrowd RecastNavigation::DetourTileCache RecastNavigation::DebugUtils)
 if(MSVC)
@@ -280,12 +309,13 @@ if(MSVC)
   target_compile_options(Kuru PRIVATE /EHsc)
 endif()
 
-# Jolt/SDL3 now build as DLLs (see the FetchContent_Declare comments above):
+# Jolt/SDL3/Tracy build as DLLs (see the FetchContent_Declare comments above):
 # put them next to Kuru.exe so the loader finds them. copy_if_different (not
 # file(COPY) at configure time) so a rebuilt SDL3.dll/Jolt.dll gets picked up.
 add_custom_command(TARGET Kuru POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE:Jolt::Jolt> $<TARGET_FILE_DIR:Kuru>)
+          $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE:Jolt::Jolt>
+          $<TARGET_FILE:Tracy::TracyClient> $<TARGET_FILE_DIR:Kuru>)
 
 # main.cpp opens textures/, models/, cursors/ and fonts/ cwd-relative too. Build
 # time, not configure time: file(COPY) ran once at cmake, so an asset added

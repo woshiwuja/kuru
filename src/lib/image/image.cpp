@@ -8,6 +8,7 @@
 // owns the one implementation.
 #undef STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 
@@ -18,6 +19,7 @@ constexpr unsigned char FUCHSIA_PIXEL[4] = {255, 0, 255, 255};
 
 // A .png decoded by stb into an in-memory sRGB KTX2, so it takes load()'s KTX path.
 KTX_error_code createKtx2FromPng(const std::string &file, ktxTexture **out) {
+  ZoneScoped;
   int width = 0, height = 0, channels = 0;
   stbi_uc *pixels =
       stbi_load(file.c_str(), &width, &height, &channels, STBI_rgb_alpha);
@@ -60,6 +62,7 @@ void transitionImageLayout(const vk::raii::CommandBuffer &commandBuffer,
                            vk::PipelineStageFlags2 srcStageMask,
                            vk::PipelineStageFlags2 dstStageMask,
                            vk::ImageAspectFlags aspectFlags) {
+  ZoneScoped;
   vk::ImageMemoryBarrier2 barrier{
       .srcStageMask = srcStageMask,
       .srcAccessMask = srcAccessMask,
@@ -84,6 +87,7 @@ void transitionImageLayout(const vk::raii::CommandBuffer &commandBuffer,
 void transitionImageLayout(const vk::raii::Image &image,
                            vk::ImageLayout oldLayout,
                            vk::ImageLayout newLayout) {
+  ZoneScoped;
   auto &device = Core::get()->device;
   auto commandBuffer = device->beginSingleTimeCommands();
 
@@ -116,6 +120,7 @@ void transitionImageLayout(const vk::raii::Image &image,
 
 void copyBufferToImage(const vk::raii::Buffer &buffer, vk::raii::Image &image,
                        uint32_t width, uint32_t height) {
+  ZoneScoped;
   auto &device = Core::get()->device;
   auto commandBuffer = device->beginSingleTimeCommands();
   vk::BufferImageCopy region{
@@ -145,6 +150,7 @@ std::shared_ptr<Texture> loadTextureFromPixels(const unsigned char *pixels, uint
 
 void Texture::loadFromPixels(const unsigned char *pixels, uint32_t width, uint32_t height,
                              vk::Format format) {
+  ZoneScoped;
   auto core = Core::get();
   vk::DeviceSize imageSize = vk::DeviceSize(width) * height * 4;
 
@@ -176,6 +182,7 @@ void Texture::loadFallback()
 
 void Texture::load(const std::string &path)
 {
+	ZoneScoped;
 	auto core = Core::get();
 	ktxTexture    *kTexture = nullptr;
 	KTX_error_code result;

@@ -1,9 +1,11 @@
 #include "sync.hpp"
 #include "../core/core.hpp"
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 
 void Sync::init() {
+      ZoneScoped;
       auto core = Core::Core::get();
       assert(presentCompleteSemaphores.empty() &&
              renderFinishedSemaphores.empty() && inFlightFences.empty());

@@ -1,11 +1,13 @@
 #include "sky.hpp"
 #include <Kuru.h>
 #include <random>
+#include <tracy/Tracy.hpp>
 
 using namespace KR;
 
 namespace {
 vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) {
+  ZoneScoped;
   vk::ShaderModuleCreateInfo createInfo{
       .codeSize = code.size(),
       .pCode = reinterpret_cast<const uint32_t *>(code.data())};
@@ -14,6 +16,7 @@ vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) {
 } // namespace
 
 void SkyPlugin::init(entt::registry &reg) {
+  ZoneScoped;
   createSkyDescriptorSetLayout();
   createSkyPipeline();
   createSkyResources();
@@ -22,6 +25,7 @@ reg.emplace<Sky>(reg.create());
 }
 
 void SkyPlugin::update(entt::registry &reg) {
+  ZoneScoped;
   for (auto [entity, sky] : reg.view<Sky>().each()) {
     ImGui::Begin("Sky");
     ImGui::ColorEdit3("tint", &sky.color.x);
@@ -33,6 +37,7 @@ void SkyPlugin::update(entt::registry &reg) {
 }
 
 void SkyPlugin::createSkyDescriptorSetLayout() {
+  ZoneScoped;
   auto &device = Core::get()->device;
   // Matches the explicit [[vk::binding(...)]] indices in sky_clouds.slang:
   // 0 = ShaderConstants, 1 = iChannel0 (Texture2D), 2 = iChannel0Sampler.
@@ -55,6 +60,7 @@ void SkyPlugin::createSkyDescriptorSetLayout() {
 }
 
 void SkyPlugin::createSkyPipeline() {
+  ZoneScoped;
   auto core = Core::get();
   vk::raii::ShaderModule shaderModule =
       createShaderModule(readFile("shaders/sky_clouds.spv"));
@@ -156,6 +162,7 @@ namespace {
 // there's no asset for one, so this stands in for it. Fixed seed: reproducible
 // runs, not cryptographic.
 std::vector<unsigned char> generateNoisePixels(uint32_t size) {
+  ZoneScoped;
   std::vector<unsigned char> pixels(static_cast<size_t>(size) * size * 4);
   std::mt19937 rng(1337);
   std::uniform_int_distribution<int> byteDist(0, 255);
@@ -167,6 +174,7 @@ std::vector<unsigned char> generateNoisePixels(uint32_t size) {
 } // namespace
 
 void SkyPlugin::createSkyResources() {
+  ZoneScoped;
   auto core = Core::get();
 
   constexpr uint32_t noiseSize =
@@ -253,6 +261,7 @@ void SkyPlugin::createSkyResources() {
 }
 
 void SkyPlugin::updateSkyUniforms(entt::registry &reg) {
+  ZoneScoped;
   auto skyView = reg.view<Sky>();
   if (skyView.begin() == skyView.end()) {
     return;
@@ -275,6 +284,7 @@ void SkyPlugin::updateSkyUniforms(entt::registry &reg) {
 }
 
 void SkyPlugin::drawSky(entt::registry &reg) {
+  ZoneScoped;
   auto skyView = reg.view<Sky>();
   if (skyView.begin() == skyView.end()) {
     return;
@@ -282,6 +292,7 @@ void SkyPlugin::drawSky(entt::registry &reg) {
 
   const auto &frame = reg.ctx().get<FrameContext>();
   const auto &commandBuffer = *frame.commandBuffer;
+  TracyVkZone(Core::get()->gpuProfiler, *commandBuffer, "sky");
 
   commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *skyPipeline);
   commandBuffer.setViewport(

@@ -1,11 +1,13 @@
 #include "debug.hpp"
 #include <iostream>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
     vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
     vk::DebugUtilsMessageTypeFlagsEXT type,
     const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData, void *) {
+  ZoneScoped;
   if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ||
       severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) {
     std::cerr << "validation layer: type " << to_string(type)

@@ -6,9 +6,11 @@
 #include "SDL3/SDL_video.h"
 #include "SDL3_image/SDL_image.h"
 #include <iostream>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 void Window::init() {
+  ZoneScoped;
   SDL_Init(SDL_INIT_VIDEO); // audio is FMOD (audio/audio.cpp)
   window = SDL_CreateWindow(title.c_str(), width, height,
                             SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | modeToSDL(mode) );
@@ -16,6 +18,7 @@ void Window::init() {
   setCursor("cursors/green.cur");
 }
 void Window::apply() {
+  ZoneScoped;
   if (mode == windowed) {
     SDL_SetWindowFullscreen(window, false);
     SDL_SetWindowSize(window, width, height);
@@ -40,12 +43,14 @@ void Window::apply() {
 }
 
 void Window::quit() {
+  ZoneScoped;
   SDL_SetCursor(SDL_GetDefaultCursor());
   SDL_DestroyCursor(cursor);
   SDL_DestroyWindow(window);
   SDL_Quit();
 }
 void Window::setCursor(const char *path) {
+  ZoneScoped;
   auto s = IMG_Load(assetPath(path).c_str());
   if (!s) {
     std::cerr << "[warn] setCursor: " << SDL_GetError() << '\n';

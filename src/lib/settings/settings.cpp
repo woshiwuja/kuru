@@ -2,6 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <json.hpp> // nlohmann, vendored by tinygltf
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 namespace {
@@ -14,6 +15,7 @@ template <typename T> void read(const json &j, const char *key, T &out) {
 }
 
 void readQuality(const json &j, Quality &out) {
+  ZoneScoped;
   if (!j.contains("quality")) {
     return;
   }
@@ -32,6 +34,7 @@ void readQuality(const json &j, Quality &out) {
 }
 
 const char *qualityName(Quality q) {
+  ZoneScoped;
   if (q == off) {
     return "off";
   }
@@ -45,6 +48,7 @@ const char *qualityName(Quality q) {
 }
 
 const json &child(const json &j, const char *key) {
+  ZoneScoped;
   static const json empty = json::object();
   if (j.contains(key)) {
     return j.at(key);
@@ -54,6 +58,7 @@ const json &child(const json &j, const char *key) {
 } // namespace
 
 void Settings::load(const std::string &path) {
+  ZoneScoped;
   std::ifstream file(path);
   if (!file) {
     std::cerr << "settings: " << path << " not found, using defaults\n";
@@ -85,6 +90,7 @@ void Settings::load(const std::string &path) {
 }
 
 void Settings::save(const std::string &path) const {
+  ZoneScoped;
   const json j = {
       {"general", json::object()},
       {"gameplay", json::object()},

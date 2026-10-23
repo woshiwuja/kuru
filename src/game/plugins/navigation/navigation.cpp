@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 #include "../material/material.hpp"
+#include <tracy/Tracy.hpp>
 
 using namespace KR;
 
@@ -39,6 +40,7 @@ struct NavGeom {
 };
 
 NavGeom flatten(const Mesh &mesh, const glm::mat4 &model) {
+  ZoneScoped;
   NavGeom g;
   g.verts.reserve(mesh.vertices.size() * 3);
   for (const Vertex &v : mesh.vertices) {
@@ -69,6 +71,7 @@ template <typename T, void (*F)(T *)> struct RcOwn {
 // gira sul thread di build, quindi e' atomico.
 int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
           std::atomic<int> &progress) {
+  ZoneScoped;
   const auto start = std::chrono::high_resolution_clock::now();
   rcContext ctx;
 
@@ -247,6 +250,7 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
 }
 
 std::string navmeshCachePath(const std::string &modelPath) {
+  ZoneScoped;
   const size_t dot = modelPath.find_last_of('.');
   const std::string stem =
       dot == std::string::npos ? modelPath : modelPath.substr(0, dot);
@@ -265,6 +269,7 @@ struct NavMeshCacheHeader {
 // the one blob dtCreateNavMeshData produced - getTile(0) hands that same
 // blob back, nothing else to serialize.
 void saveNavMesh(const dtNavMesh &mesh, const std::string &path) {
+  ZoneScoped;
   const dtMeshTile *tile = mesh.getTile(0);
   if (tile == nullptr || tile->data == nullptr)
     return;
@@ -283,6 +288,7 @@ void saveNavMesh(const dtNavMesh &mesh, const std::string &path) {
 }
 
 bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
+  ZoneScoped;
   std::ifstream file(path, std::ios::binary);
   if (!file)
     return false; // no cache yet, not an error
@@ -339,6 +345,7 @@ bool loadNavMesh(NavMap &nav, const NavConfig &c, const std::string &path) {
 
 std::vector<glm::vec3> findPath(const NavMap &nav, glm::vec3 from,
                                 glm::vec3 to) {
+  ZoneScoped;
   if (nav.query == nullptr) {
     return {};
   }
@@ -384,6 +391,7 @@ std::vector<glm::vec3> findPath(const NavMap &nav, glm::vec3 from,
 }
 
 void NavigationPlugin::start(entt::registry &reg) {
+  ZoneScoped;
   if (rebuildRequested) {
     rebuildRequested = false;
     // Every navmesh goes: drop them and the loop below queues them all again.
@@ -420,6 +428,7 @@ void NavigationPlugin::start(entt::registry &reg) {
 }
 
 void NavigationPlugin::buildNext(entt::registry &reg) {
+  ZoneScoped;
   if (pending.valid() || queue.empty()) {
     return; // uno alla volta
   }
@@ -451,6 +460,7 @@ void NavigationPlugin::buildNext(entt::registry &reg) {
 }
 
 void NavigationPlugin::poll(entt::registry &reg) {
+  ZoneScoped;
   using namespace std::chrono_literals;
   if (!pending.valid() || pending.wait_for(0s) != std::future_status::ready) {
     return;
@@ -475,6 +485,7 @@ void NavigationPlugin::poll(entt::registry &reg) {
 }
 
 void NavigationPlugin::spawnDebug(entt::registry &reg, NavMeshRef &ref) {
+  ZoneScoped;
   if (ref.nav.mesh == nullptr) {
     clearDebug(reg, ref);
     return;
@@ -485,6 +496,7 @@ void NavigationPlugin::spawnDebug(entt::registry &reg, NavMeshRef &ref) {
 
 void NavigationPlugin::spawnDebug(entt::registry &reg, NavMeshRef &ref,
                                   const DebugGeom &geom) {
+  ZoneScoped;
   clearDebug(reg, ref);
   if (geom.indices.empty())
     return;
@@ -498,6 +510,7 @@ void NavigationPlugin::spawnDebug(entt::registry &reg, NavMeshRef &ref,
 }
 
 void NavigationPlugin::clearDebug(entt::registry &reg, NavMeshRef &ref) {
+  ZoneScoped;
   if (reg.valid(ref.debug)) {
     renderer(reg).despawn(reg, ref.debug);
   }
@@ -505,6 +518,7 @@ void NavigationPlugin::clearDebug(entt::registry &reg, NavMeshRef &ref) {
 }
 
 NavMeshRef *NavigationPlugin::navFor(entt::registry &reg, NavAgent &agent) {
+  ZoneScoped;
   if (agent.walkable == entt::null) {
     for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
       if (ref.nav.crowd != nullptr) {
@@ -524,6 +538,7 @@ NavMeshRef *NavigationPlugin::navFor(entt::registry &reg, NavAgent &agent) {
 }
 
 void NavigationPlugin::UI(entt::registry &reg) {
+  ZoneScoped;
   using namespace ImGui;
   if (Begin("Navigation")) {
     SeparatorText("walkable");
@@ -601,6 +616,7 @@ void NavigationPlugin::UI(entt::registry &reg) {
 }
 
 void NavigationPlugin::update(entt::registry &reg) {
+  ZoneScoped;
   UI(reg); // prima dell'uscita anticipata: il pannello serve soprattutto
            // quando la navmesh non c'e'.
 

@@ -10,6 +10,7 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <iostream>
 #include "../physics/physics.hpp" // glmVecToJPH
+#include <tracy/Tracy.hpp>
 
 using namespace KR;
 
@@ -17,6 +18,7 @@ namespace KR {
 constexpr glm::vec3 WORLD_UP = {0.0f, 1.0f, 0.0f};
 
 glm::vec3 Camera::front() const {
+  ZoneScoped;
   const float yawRad = glm::radians(yaw);
   const float pitchRad = glm::radians(pitch);
   return glm::normalize(glm::vec3{std::cos(yawRad) * std::cos(pitchRad),
@@ -33,6 +35,7 @@ void CameraPlugin::init(entt::registry &reg) {
 }
 
 void CameraPlugin::update(entt::registry &reg) {
+  ZoneScoped;
   auto &frame = reg.ctx().get<FrameContext>();
   auto view = reg.view<Camera, MainCamera>();
   if (view.begin() == view.end()) {
@@ -44,6 +47,7 @@ void CameraPlugin::update(entt::registry &reg) {
 }
 
 void Camera::control(FrameContext &frame){
+    ZoneScoped;
     const auto *core = Core::get();
     const auto &input = *core->eventManager;
     const bool frozen = core->frozen;
@@ -112,6 +116,7 @@ void Camera::control(FrameContext &frame){
 };
 
 void Camera::viewCube(FrameContext &frame) {
+    ZoneScoped;
     constexpr float size = 128.0f;
     const ImGuiViewport *vp = ImGui::GetMainViewport();
     glm::mat4 glProj = frame.projNoReverseZ;
@@ -136,6 +141,7 @@ void Camera::viewCube(FrameContext &frame) {
 }
 
 void CameraPlugin::UI(entt::registry &reg){
+    ZoneScoped;
     using namespace ImGui;
     if (Begin("Cameras")) {
       for (auto [entity, camera] : reg.view<Camera>().each()) {

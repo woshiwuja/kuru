@@ -2,17 +2,29 @@
 #include "../core/core.hpp"
 #include "vulkan/vulkan.hpp"
 #include <vulkan/vulkan_profiles.hpp>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 
 void Device::pickPhysicalDevice() {
+  ZoneScoped;
   auto core = Core::Core::get();
   std::vector<vk::raii::PhysicalDevice> physicalDevices =
       core->instance.enumeratePhysicalDevices();
-  auto const devIter =
+  // A discrete GPU when one is suitable, else the first suitable one: the
+  // loader often lists the integrated GPU first on hybrid laptops.
+  auto devIter =
       std::ranges::find_if(physicalDevices, [&](auto const &physicalDevice) {
-        return isDeviceSuitable(physicalDevice);
+        return physicalDevice.getProperties().deviceType ==
+                   vk::PhysicalDeviceType::eDiscreteGpu &&
+               isDeviceSuitable(physicalDevice);
       });
+  if (devIter == physicalDevices.end()) {
+    devIter =
+        std::ranges::find_if(physicalDevices, [&](auto const &physicalDevice) {
+          return isDeviceSuitable(physicalDevice);
+        });
+  }
   if (devIter == physicalDevices.end()) {
     throw std::runtime_error("failed to find a suitable GPU!");
   }
@@ -39,6 +51,7 @@ void Device::pickPhysicalDevice() {
 }
 
 void Device::createLogicalDevice() {
+  ZoneScoped;
   auto core = Core::Core::get();
   std::vector<vk::QueueFamilyProperties> queueFamilyProperties =
       physicalDevice.getQueueFamilyProperties();
@@ -96,6 +109,7 @@ void Device::createLogicalDevice() {
 }
 
 bool Device::isDeviceSuitable(vk::raii::PhysicalDevice const &physicalDevice) {
+  ZoneScoped;
   bool supportsVulkan1_3 =
       physicalDevice.getProperties().apiVersion >= VK_API_VERSION_1_3;
 
@@ -139,6 +153,7 @@ bool Device::isDeviceSuitable(vk::raii::PhysicalDevice const &physicalDevice) {
 void Device::wait() { device.waitIdle(); }
 
 void Device::createCommandPool() {
+  ZoneScoped;
   vk::CommandPoolCreateInfo poolInfo{
       .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
       .queueFamilyIndex = queueIndex};
@@ -146,6 +161,7 @@ void Device::createCommandPool() {
 }
 
 std::unique_ptr<vk::raii::CommandBuffer> Device::beginSingleTimeCommands() {
+  ZoneScoped;
   vk::CommandBufferAllocateInfo allocInfo{.commandPool = *commandPool,
                                           .level =
                                               vk::CommandBufferLevel::ePrimary,
@@ -163,6 +179,7 @@ std::unique_ptr<vk::raii::CommandBuffer> Device::beginSingleTimeCommands() {
 
 void Device::endSingleTimeCommands(
     const vk::raii::CommandBuffer &commandBuffer) const {
+  ZoneScoped;
   commandBuffer.end();
 
   vk::SubmitInfo submitInfo{.commandBufferCount = 1,
@@ -174,6 +191,7 @@ void Device::endSingleTimeCommands(
 
 void Device::copyBuffer(vk::raii::Buffer &srcBuffer,
                         vk::raii::Buffer &dstBuffer, vk::DeviceSize size) {
+  ZoneScoped;
   auto commandBuffer = beginSingleTimeCommands();
   commandBuffer->copyBuffer(*srcBuffer, *dstBuffer,
                             vk::BufferCopy{.size = size});

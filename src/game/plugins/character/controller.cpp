@@ -13,10 +13,12 @@
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <cmath>
 #include <limits>
+#include <tracy/Tracy.hpp>
 
 // Spawning/despawning renderables only here: in update() the frame's
 // command buffer already references them (see PhysicsPlugin::start).
 void CharacterControllerPlugin::start(entt::registry &r) {
+    ZoneScoped;
     // Characters stand upright and never turn by physics: every rotation is
     // locked (contacts and the walk force would spin them around Y), and the
     // body is created straightened, keeping its heading. Y translation stays
@@ -63,6 +65,7 @@ void CharacterControllerPlugin::start(entt::registry &r) {
 }
 
 void CharacterControllerPlugin::update(entt::registry &r) {
+    ZoneScoped;
     const float dt = Core::get()->realDeltaTime();
     for (auto [e, marker] : r.view<ClickMarker>().each()) {
         marker.age += dt;
@@ -100,6 +103,7 @@ void CharacterControllerPlugin::update(entt::registry &r) {
 }
 
 void CharacterControllerPlugin::walk(entt::registry &r) {
+    ZoneScoped;
     if (Core::get()->paused) {
         return;
     }
@@ -176,6 +180,7 @@ void CharacterControllerPlugin::walk(entt::registry &r) {
 void CharacterControllerPlugin::clickMap(entt::registry &r,
                                          const FrameContext &frame,
                                          glm::vec2 pixel) {
+    ZoneScoped;
     const glm::vec3 origin = glm::inverse(frame.view)[3];
     const glm::vec3 dir = screenToWorld(frame, pixel) - origin;
     for (auto [e, meshRef, t] : r.view<Map, MeshRef, Transform>().each()) {
@@ -226,6 +231,7 @@ void CharacterControllerPlugin::clickMap(entt::registry &r,
 // ponytail: the first map with a navmesh; pick the one under `other` if a
 // scene ever has several.
 void CharacterControllerPlugin::interactWith(entt::registry &r, entt::entity other) {
+    ZoneScoped;
     const glm::vec3 target = r.get<Transform>(other).position;
     const NavMeshRef *nav = nullptr;
     for (auto [e, ref] : r.view<Map, NavMeshRef>().each()) {

@@ -1,11 +1,13 @@
 #include "../core/core.hpp"
 #include <SDL3/SDL_filesystem.h>
 #include <fstream>
+#include <tracy/Tracy.hpp>
 
 namespace KR {
 uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties props,
                         uint32_t typeFilter,
                         vk::MemoryPropertyFlags memProps) {
+  ZoneScoped;
   auto len = props.memoryTypeCount;
   for (uint32_t i = 0; i < len; i++) {
     if ((typeFilter & (1 << i)) && (props.memoryTypes[i].propertyFlags &
@@ -19,6 +21,7 @@ uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties props,
 void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
                   vk::MemoryPropertyFlags memProps, vk::raii::Buffer &buffer,
                   vk::raii::DeviceMemory &bufferMemory) {
+  ZoneScoped;
   auto core = Core::get();
   auto props = core->device->physicalDevice.getMemoryProperties();
   vk::BufferCreateInfo bufferInfo{
@@ -39,6 +42,7 @@ std::string assetPath(const std::string &relative) {
 }
 
 std::vector<char> readFile(const std::string &filename) {
+  ZoneScoped;
   const std::string resolved = assetPath(filename);
   std::ifstream file(resolved, std::ios::ate | std::ios::binary);
   if (!file.is_open()) {

@@ -1,8 +1,10 @@
 #include "material.hpp"
 #include "entt/entity/fwd.hpp"
+#include <tracy/Tracy.hpp>
 using namespace ImGui;
 
 void materialEditor(Material &m) {
+  ZoneScoped;
   ColorEdit4("Color", &m.color.x);
   SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f);
   SliderFloat("Roughness", &m.roughness, 0.04f, 1.0f);

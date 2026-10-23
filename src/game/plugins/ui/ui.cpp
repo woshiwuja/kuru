@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "ImGuizmo.h"
 #include "../render/render.hpp"
+#include <tracy/Tracy.hpp>
 
 using namespace KR;
 
@@ -12,7 +13,9 @@ void UIPlugin::init(entt::registry &reg){
     auto &style = ImGui::GetStyle();
     setStyle(style);
 }
+
 void UIPlugin::start(entt::registry &reg) {
+  ZoneScoped;
   for (const SDL_Event &event : Core::get()->eventManager->events) {
     ImGui_ImplSDL3_ProcessEvent(&event);
   }
@@ -28,9 +31,11 @@ void UIPlugin::start(entt::registry &reg) {
 }
 
 void UIPlugin::end(entt::registry &reg) {
+  ZoneScoped;
   auto &frame = reg.ctx().get<FrameContext>();
 
   ImGui::Render();
+  TracyVkZone(Core::get()->gpuProfiler, **frame.commandBuffer, "imgui");
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), **frame.commandBuffer);
 
   const ImGuiIO &io = ImGui::GetIO();
@@ -39,6 +44,7 @@ void UIPlugin::end(entt::registry &reg) {
 }
 
 ImFont *findFont(const char *name){
+  ZoneScoped;
   for (ImFont *font : ImGui::GetIO().Fonts->Fonts){
       if (std::strcmp(font->GetDebugName(), name) == 0){
           return font;
@@ -48,6 +54,7 @@ ImFont *findFont(const char *name){
 }
 
 void setStyle(ImGuiStyle &style){
+    ZoneScoped;
     //setColors();
     //setDefaults();
     style.Colors[ImGuiCol_Text]                  = Color::White.Alpha(0.78f);
@@ -98,6 +105,7 @@ bool dragVec3(const char *label, KR::vec3 &v, float speed ){
 }
 
 bool dragRotation(const char *label, glm::quat &rotation) {
+  ZoneScoped;
   glm::vec3 euler = glm::degrees(glm::eulerAngles(rotation));
   if (!ImGui::DragFloat3(label, &euler.x, 1.0f))
     return false;
