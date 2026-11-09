@@ -23,7 +23,7 @@ void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
                   vk::raii::DeviceMemory &bufferMemory) {
   ZoneScoped;
   auto core = Core::get();
-  auto props = core->device->physicalDevice.getMemoryProperties();
+  auto properties = core->device->physicalDevice.getMemoryProperties();
   vk::BufferCreateInfo bufferInfo{
       .size = size, .usage = usage, .sharingMode = vk::SharingMode::eExclusive};
   buffer = vk::raii::Buffer(core->device->device, bufferInfo);
@@ -31,7 +31,7 @@ void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage,
   vk::MemoryAllocateInfo allocInfo{
       .allocationSize = memRequirements.size,
       .memoryTypeIndex =
-          findMemoryType(props,memRequirements.memoryTypeBits, memProps)};
+          findMemoryType(properties, memRequirements.memoryTypeBits, memProps)};
   bufferMemory = vk::raii::DeviceMemory(core->device->device, allocInfo);
   buffer.bindMemory(*bufferMemory, 0);
 }

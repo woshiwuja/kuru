@@ -4,6 +4,7 @@
 #include "plugins/character/controller.hpp"
 #include "plugins/inspector/inspector.hpp"
 #include "plugins/inventory/inventory.hpp"
+#include "plugins/item/item.hpp"
 #include "plugins/lighting/lighting.hpp"
 #include "plugins/map/map.hpp"
 #include "plugins/render/mesh_registry.hpp"
@@ -60,6 +61,7 @@ int main()
 		app.addPlugin(std::make_unique<MaterialPlugin>());
 		app.addPlugin(std::make_unique<TexturePlugin>());
 		app.addPlugin(std::make_unique<ModelPlugin>());
+		app.addPlugin(std::make_unique<ItemPlugin>()); // after ModelPlugin: sizes bodies from meshes it loads
 		//app.addPlugin(std::make_unique<HairPlugin>()); // after Physics/Render/Model: see HairPlugin::update
 		app.addPlugin(std::make_unique<PickingPlugin>()); // after TransformPlugin: see update()
 		app.addPlugin(std::make_unique<SavePlugin>()); // before PausingPlugin: it reads SaveMenu

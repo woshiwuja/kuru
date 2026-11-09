@@ -148,11 +148,22 @@ struct NavDest {
   glm::vec3 pos{0.0f};
 };
 
-struct NavigationPlugin : public Plugin {
+// Quello che il worker consegna al main thread: nessun oggetto Vulkan e
+// nessun riferimento al registry, solo roba che si puo' spostare.
+struct NavBuildResult {
+  NavMap nav;
+  DebugGeom debug;
+  int polyCount = 0;
+};
+
+struct NavigationPlugin : public BackgroundPlugin<NavBuildResult> {
   NavigationPlugin() {
     registerComponent<Walkable>();
     registerComponent<NavMeshRef>();
   }
+  // Il job vive nella base, che muore dopo buildPhase: senza questa attesa il
+  // worker scriverebbe in un atomic gia' distrutto.
+  ~NavigationPlugin() override { job.wait(); }
   // Creare e distruggere entita' renderizzabili avviene qui e solo qui: in
   // update() il command buffer del frame ha gia' i draw registrati dentro, e
   // liberare un buffer che nomina ancora significa device lost. La UI si
@@ -172,30 +183,14 @@ struct NavigationPlugin : public Plugin {
   float lastBuildSeconds = 0.0f;
   int lastPolyCount = 0;
 
-  // Quello che il worker consegna al main thread: nessun oggetto Vulkan e
-  // nessun riferimento al registry, solo roba che si puo' spostare.
-  struct BuildResult {
-    NavMap nav;
-    DebugGeom debug;
-    int polyCount = 0;
-  };
   bool rebuildRequested = false;
   bool overlayRequested = false;
   std::atomic<int> buildPhase{0};
   std::chrono::steady_clock::time_point buildStarted;
-  // Ultimo membro di proposito. Il distruttore di un future di std::async
-  // aspetta il worker, e i membri muoiono in ordine inverso di dichiarazione:
-  // cosi' l'attesa avviene prima che buildPhase, che il worker sta scrivendo,
-  // sparisca sotto di lui.
-  std::future<BuildResult> pending;
 
-  // Lancia il build della prossima entita' in coda su un thread e torna
-  // subito. Non lancia eccezioni: quella del worker riemerge da poll() e
-  // finisce in lastError, cosi' la UI vive.
-  void buildNext(entt::registry &reg);
-  // Raccoglie il risultato quando e' pronto: qui, sul main thread, avvengono
-  // l'upload dell'overlay e l'inserimento nel registry.
-  void poll(entt::registry &reg);
+  void launchNext(entt::registry &reg) override;
+  void finished(entt::registry &reg, NavBuildResult &out) override;
+  void failed(entt::registry &reg, const std::exception &e) override;
   void spawnDebug(entt::registry &reg, NavMeshRef &ref);
   void spawnDebug(entt::registry &reg, NavMeshRef &ref, const DebugGeom &geom);
   void clearDebug(entt::registry &reg, NavMeshRef &ref);

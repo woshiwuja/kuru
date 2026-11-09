@@ -15,6 +15,7 @@
 #include "picking/picking.hpp"
 #include "dialog/dialog.hpp"
 #include "terminal/terminal.hpp"
+#include "item/item.hpp"
 #include <format>
 #include <string>
 
@@ -47,7 +48,22 @@ struct DefaultPlugin : public Plugin {
       return e;
     };
     reg.emplace<Talkable>(character("coglione", {0, 100, 0}), "dialogue/test.yarn");
-    reg.emplace<PlayerCharacter>(character("player", {6, 100, 0}));
+    entt::entity player = character("player", {6, 100, 0});
+    reg.emplace<PlayerCharacter>(player);
+
+    auto item = [&](const char *name, const char *model, KR::vec3 position) {
+      entt::entity e = reg.create();
+      reg.emplace<Item>(e, Item{.name = name, .model = model});
+      reg.emplace<Transform>(e, Transform{.position = position, .scale = {1, 1, 1}});
+      reg.emplace<Pickable>(e);
+      return e;
+    };
+    item("Mauser", "models/mauser.glb", {6, 100, 2});
+    item("Mauser", "models/mauser.glb", {8, 100, 2});
+    //item("Thing", "models/default_item.glb", {4, 20, 2});
+    entt::entity spare = reg.create();
+    reg.emplace<Item>(spare, Item{.name = "Spare Mauser", .model = "models/mauser.glb"});
+    reg.emplace<InInventory>(spare, player);
 
     auto prop = reg.create();
     reg.emplace<Transform>(prop, Transform{.position = {3.0+.5, 20, 3.0+.5},.scale= {1,1,1}});

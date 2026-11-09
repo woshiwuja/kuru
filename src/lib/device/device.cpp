@@ -11,20 +11,11 @@ void Device::pickPhysicalDevice() {
   auto core = Core::Core::get();
   std::vector<vk::raii::PhysicalDevice> physicalDevices =
       core->instance.enumeratePhysicalDevices();
-  // A discrete GPU when one is suitable, else the first suitable one: the
-  // loader often lists the integrated GPU first on hybrid laptops.
+  // The first suitable GPU in loader order, discrete or not.
   auto devIter =
       std::ranges::find_if(physicalDevices, [&](auto const &physicalDevice) {
-        return physicalDevice.getProperties().deviceType ==
-                   vk::PhysicalDeviceType::eDiscreteGpu &&
-               isDeviceSuitable(physicalDevice);
+        return isDeviceSuitable(physicalDevice);
       });
-  if (devIter == physicalDevices.end()) {
-    devIter =
-        std::ranges::find_if(physicalDevices, [&](auto const &physicalDevice) {
-          return isDeviceSuitable(physicalDevice);
-        });
-  }
   if (devIter == physicalDevices.end()) {
     throw std::runtime_error("failed to find a suitable GPU!");
   }

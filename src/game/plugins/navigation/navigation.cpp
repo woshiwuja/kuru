@@ -212,9 +212,6 @@ int build(NavMap &nav, const NavConfig &c, const NavGeom &geom,
   unsigned char *navData = nullptr;
   int navDataSize = 0;
   if (!dtCreateNavMeshData(&params, &navData, &navDataSize)) {
-    // I suoi due modi di fallire si distinguono solo dai conteggi: nessun
-    // triangolo camminabile (mesh capovolta, slope, erosione) o una tile sola
-    // che non basta piu'.
     throw std::runtime_error(
         "dtCreateNavMeshData fallita: " + std::to_string(pmesh->nverts) +
         " verts, " + std::to_string(pmesh->npolys) + " polys");
@@ -413,8 +410,7 @@ void NavigationPlugin::start(entt::registry &reg) {
     reg.emplace<NavMeshRef>(e);
     queue.push_back(e);
   }
-  poll(reg);
-  buildNext(reg);
+  BackgroundPlugin::start(reg);
   if (overlayRequested) {
     overlayRequested = false;
     for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
@@ -427,10 +423,10 @@ void NavigationPlugin::start(entt::registry &reg) {
   }
 }
 
-void NavigationPlugin::buildNext(entt::registry &reg) {
+void NavigationPlugin::launchNext(entt::registry &reg) {
   ZoneScoped;
-  if (pending.valid() || queue.empty()) {
-    return; // uno alla volta
+  if (queue.empty()) {
+    return;
   }
   building = queue.front();
   queue.erase(queue.begin());
@@ -449,8 +445,8 @@ void NavigationPlugin::buildNext(entt::registry &reg) {
   const NavConfig cfg = config;
   buildPhase = 0;
   buildStarted = std::chrono::steady_clock::now();
-  pending = std::async(std::launch::async, [this, cfg, geom = std::move(geom)] {
-    BuildResult out;
+  job.launch([this, cfg, geom = std::move(geom)] {
+    NavBuildResult out;
     out.polyCount = build(out.nav, cfg, geom, buildPhase);
     if (cfg.drawDebug) {
       out.debug = out.nav.debugGeometry(cfg.debugColor, cfg.debugOffsetY);
@@ -459,29 +455,27 @@ void NavigationPlugin::buildNext(entt::registry &reg) {
   });
 }
 
-void NavigationPlugin::poll(entt::registry &reg) {
+void NavigationPlugin::finished(entt::registry &reg, NavBuildResult &out) {
   ZoneScoped;
-  using namespace std::chrono_literals;
-  if (!pending.valid() || pending.wait_for(0s) != std::future_status::ready) {
-    return;
-  }
   lastBuildSeconds = std::chrono::duration<float>(
                          std::chrono::steady_clock::now() - buildStarted)
                          .count();
-  try {
-    BuildResult out = pending.get();
-    lastPolyCount = out.polyCount;
-    // Destroyed (or rebuilt) while building: nowhere to put the result.
-    if (!reg.valid(building) || !reg.all_of<NavMeshRef>(building)) {
-      return;
-    }
-    auto &ref = reg.get<NavMeshRef>(building);
-    ref.nav = std::move(out.nav);
-    ref.polyCount = out.polyCount;
-    spawnDebug(reg, ref, out.debug);
-  } catch (const std::exception &e) {
-    lastError = e.what();
+  lastPolyCount = out.polyCount;
+  // Destroyed (or rebuilt) while building: nowhere to put the result.
+  if (!reg.valid(building) || !reg.all_of<NavMeshRef>(building)) {
+    return;
   }
+  auto &ref = reg.get<NavMeshRef>(building);
+  ref.nav = std::move(out.nav);
+  ref.polyCount = out.polyCount;
+  spawnDebug(reg, ref, out.debug);
+}
+
+void NavigationPlugin::failed(entt::registry &reg, const std::exception &e) {
+  lastBuildSeconds = std::chrono::duration<float>(
+                         std::chrono::steady_clock::now() - buildStarted)
+                         .count();
+  lastError = e.what();
 }
 
 void NavigationPlugin::spawnDebug(entt::registry &reg, NavMeshRef &ref) {
@@ -574,13 +568,13 @@ void NavigationPlugin::UI(entt::registry &reg) {
               100.0f);
 
     SeparatorText("build");
-    BeginDisabled(pending.valid() || !queue.empty() || rebuildRequested);
+    BeginDisabled(job.busy() || !queue.empty() || rebuildRequested);
     if (Button("Rebuild all")) {
       rebuildRequested = true;
     }
     EndDisabled();
     SameLine();
-    if (pending.valid()) {
+    if (job.busy()) {
       const int phase = buildPhase.load();
       ProgressBar(static_cast<float>(phase) / NAV_BUILD_STEPS, ImVec2(-1, 0),
                   std::format("{}/{}", phase, NAV_BUILD_STEPS).c_str());
@@ -617,9 +611,7 @@ void NavigationPlugin::UI(entt::registry &reg) {
 
 void NavigationPlugin::update(entt::registry &reg) {
   ZoneScoped;
-  UI(reg); // prima dell'uscita anticipata: il pannello serve soprattutto
-           // quando la navmesh non c'e'.
-
+  UI(reg);
   for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
     if (agent.idx >= 0)
       continue;
@@ -637,44 +629,35 @@ void NavigationPlugin::update(entt::registry &reg) {
                      DT_CROWD_OPTIMIZE_TOPO | DT_CROWD_OBSTACLE_AVOIDANCE |
                      DT_CROWD_SEPARATION;
     ap.separationWeight = 2.0f;
-    // Detour is float-only; Transform::position is double for large-world range.
     const glm::vec3 pos = t.position;
     agent.idx = ref->nav.crowd->addAgent(&pos.x, &ap);
   }
 
-  for (auto [e, agent, dest] : reg.view<NavAgent, NavDest>().each()) {
-    if (agent.idx < 0)
-      continue;
-    NavMeshRef *ref = navFor(reg, agent);
-    if (ref == nullptr)
-      continue;
-    const dtCrowd &crowd = *ref->nav.crowd;
-    dtPolyRef poly = 0;
-    float nearest[3] = {0, 0, 0};
-    if (dtStatusFailed(ref->nav.query->findNearestPoly(
-            &dest.pos.x, crowd.getQueryExtents(), crowd.getFilter(0), &poly,
-            nearest)) ||
-        poly == 0) {
-      continue;
-    }
-    ref->nav.crowd->requestMoveTarget(agent.idx, poly, nearest);
-    reg.erase<NavDest>(e);
-  }
 
   for (auto [e, ref] : reg.view<NavMeshRef>().each()) {
     if (ref.nav.crowd != nullptr) {
       ref.nav.crowd->update(Core::get()->deltaTime(), nullptr);
     }
   }
+}
 
-  for (auto [e, agent, t] : reg.view<NavAgent, Transform>().each()) {
-    if (agent.idx < 0)
-      continue;
-    NavMeshRef *ref = navFor(reg, agent);
-    if (ref == nullptr)
-      continue;
-    const dtCrowdAgent *a = ref->nav.crowd->getAgent(agent.idx);
-    if (a == nullptr || !a->active)
-      continue;
-  }
+void goToDestination(entt::registry &reg){
+    for (auto [e, agent, dest] : reg.view<NavAgent, NavDest>().each()) {
+      if (agent.idx < 0)
+        continue;
+      NavMeshRef *ref = navFor(reg, agent);
+      if (ref == nullptr)
+        continue;
+      const dtCrowd &crowd = *ref->nav.crowd;
+      dtPolyRef poly = 0;
+      float nearest[3] = {0, 0, 0};
+      if (dtStatusFailed(ref->nav.query->findNearestPoly(
+              &dest.pos.x, crowd.getQueryExtents(), crowd.getFilter(0), &poly,
+              nearest)) ||
+          poly == 0) {
+        continue;
+      }
+      ref->nav.crowd->requestMoveTarget(agent.idx, poly, nearest);
+      reg.erase<NavDest>(e);
+    }
 }

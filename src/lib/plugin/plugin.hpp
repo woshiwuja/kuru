@@ -1,11 +1,18 @@
 #pragma once
 #include <entt/entt.hpp>
+#include <exception>
+#include <chrono>
+#include <future>
+#include <iostream>
+#include <optional>
 #include <string>
 #include <glm/glm.hpp>
+#include <thread>
+#include <tracy/Tracy.hpp>
 #include <vulkan/vulkan_raii.hpp>
-#include <fstream>
 #include <type_traits>
 #include "../common/common.hpp" // SaveFile
+#include "entt/entity/fwd.hpp"
 
 namespace KR {
 
@@ -40,9 +47,6 @@ template <typename T> void metaRemove(entt::registry &r, entt::entity e) {
 
 template <typename T> void registerComponent() {
   using namespace entt::literals;
-  // SaveFile writes raw bytes, so only plain data is saved: a pointer or
-  // handle written out (Renderable, MaterialRef, std::string...) is garbage
-  // once loaded. Those components are simply not in the save.
   if constexpr (std::is_trivially_copyable_v<T>) {
     static bool once =
         (serialTypes().push_back(
@@ -68,14 +72,59 @@ inline std::string typeName(const entt::meta_type &t) {
 struct Plugin {
   virtual ~Plugin() = default;
   Plugin() = default;
-  virtual void init(entt::registry &reg) {}
+  virtual void init(entt::registry &reg) {
+      ZoneScoped;
+  }
   virtual void start(entt::registry &reg) {}
   virtual void update(entt::registry &reg) {}
   virtual void end(entt::registry &reg) {}
-  // Run after the component pools, in plugin order, on both sides: a plugin
-  // appends what the raw-byte pools can't hold (shapes, GPU state inputs) and
-  // reads it back, in the same order, after the entities exist again.
   virtual void save(entt::registry &reg, SaveFile &file) {}
   virtual void load(entt::registry &reg, SaveFile &file) {}
+};
+
+template<typename Result> struct BackgroundJob {
+    std::future<Result> result;
+    bool busy() const {return result.valid();}
+    template<typename Function> void launch(Function fn){
+        result = std::async(std::launch::async, std::move(fn));
+    }
+    // The result once it's ready, nullopt before. Rethrows the worker's
+    // exception; either way the job is idle again afterwards.
+    std::optional<Result> poll(){
+        if (!result.valid() || result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            return std::nullopt;
+        }
+        return result.get();
+    }
+    void wait(){
+        if (result.valid()) {
+            result.wait();
+        }
+    }
+};
+
+// One job at a time on a worker thread. Polled in start(): that's the only
+// hook where a result may create or destroy renderables (see
+// NavigationPlugin), so an override of start() must call this one.
+template<typename Result> struct BackgroundPlugin : public Plugin{
+    BackgroundJob<Result> job;
+    virtual void launchNext(entt::registry &reg) {}
+    virtual void finished(entt::registry &reg, Result &result) {}
+    virtual void failed(entt::registry &reg, const std::exception &e) {
+        std::cout << e.what() << "\n";
+    }
+    void start(entt::registry &reg) override {
+        try {
+            if (std::optional<Result> result = job.poll()) {
+                finished(reg, *result);
+            }
+        }
+        catch(const std::exception &e) {
+            failed(reg, e);
+        }
+        if (!job.busy()) {
+            launchNext(reg);
+        }
+    }
 };
 } // namespace KR

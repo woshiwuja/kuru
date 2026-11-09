@@ -93,7 +93,6 @@ struct SettingsPlugin : public Plugin {
     ImGui::PopFont();
   }
 
-  // True when the window settings changed and should be applied.
   static bool video(Settings::Video &v) {
     bool changed = false;
     ImGui::SeparatorText("Window");

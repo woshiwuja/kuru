@@ -23,8 +23,6 @@ struct MapPlugin : public Plugin {
     MapPlugin() { registerComponent<Map>(); }
     void init(entt::registry &reg)override{
         const std::string mapPath = "models/testmap.glb";
-        // The heightfield is built in raw mesh units; PhysicsPlugin scales the
-        // shape from this Transform, so the map resizes from one place.
         constexpr float mapScale = 100.0f;
         entt::entity mapEntity = reg.create();
 		reg.emplace<Transform>(mapEntity, Transform{.scale = glm::vec3(mapScale)});
@@ -78,7 +76,7 @@ struct MapPlugin : public Plugin {
 
 			const glm::vec2 v0 = gb - ga, v1 = gc - ga;
 			const float den = v0.x * v1.y - v1.x * v0.y;
-			if (std::abs(den) < 1e-8f) continue; // degenerate triangle
+			if (std::abs(den) < 1e-8f) continue;
 
 			for (int gz = minGZ; gz <= maxGZ; gz++) {
 				for (int gx = minGX; gx <= maxGX; gx++) {
@@ -103,8 +101,6 @@ struct MapPlugin : public Plugin {
 		{
 		throw("seh rotta");
 		}
-		// PhysicsPlugin creates the body and keeps the BodyID on the entity, so
-		// later Transform edits can find it again.
 		auto &body = reg.emplace<JPH::BodyCreationSettings>(
 		mapEntity,
 		result.Get(),
@@ -113,8 +109,6 @@ struct MapPlugin : public Plugin {
 		JPH::EMotionType::Static,     // heightfields are always static
 		KR::NON_MOVING            // your object layer for static geometry
 		);
-		// Jolt multiplies frictions (sqrt): with Jolt's 0.2 here, even a
-		// character at full friction would slide off anything over ~24 deg.
 		body.mFriction = 1.0f;
     }
 };
