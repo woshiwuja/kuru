@@ -2,7 +2,7 @@
 #include "../character/character.hpp"
 #include "../character/controller.hpp"
 #include "../name/name.hpp"
-#include "../transform/transform.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
 #include "lib/yarn_spinner.hpp"
 #include <Kuru.h>
 #include <map>

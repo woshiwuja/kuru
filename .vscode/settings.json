@@ -1,0 +1,20 @@
+{
+    "editor.fontFamily": "'Noto Mono'",
+    // Font Regex rules (~/Projects/Mine/vscode-fontregex). Edit via "Font Regex: Edit Rules".
+    "fontRegex.rules": [
+        // entt::entity / entt::registry type names
+        { "regex": "entt::entity\\b", "font": "UnifontExMono", "color": "#00897B" },
+        { "regex": "entt::registry\\b", "font": "UnifontExMono", "color": "#5E35B1" },
+        // entity variable name at its declaration ("const entt::entity& e", "entt::entity* e")
+        { "regex": "entt::entity[\\s&*]+(\\w+)", "group": 1, "font": "Roentgen NBP", "color": "#E65100" },
+        // every use of the usual entity names; the lookahead skips exceptions and "e.g"
+        { "regex": "\\b(?:e|entity)\\b(?!\\.(?:what|g|save|load|id)\\b)", "font": "Roentgen NBP", "color": "#E65100" },
+        // registry variable name at its declaration
+        { "regex": "entt::registry[\\s&*]+(\\w+)", "group": 1, "font": "3270 Nerd Font Mono", "color": "#C2185B" },
+        // every use of reg / r; the lookahead skips "r" used as a vec4 or a renderable
+        { "regex": "\\b(?:reg|r)\\b(?!\\.(?:x|y|z|w|mesh|material|renderable)\\b)", "font": "3270 Nerd Font Mono", "color": "#C2185B" },
+        { "regex": "ImGui::\\w+", "font": "DepartureMono Nerd Font Mono", "color": "#1565C0" },
+        // RenderPlugin, HairPlugin, ... (capitalized, so addPlugin is skipped)
+        { "regex": "\\b[A-Z]\\w*Plugin\\b", "font": "Pixel Code", "color": "#2E7D32" }
+    ]
+}

@@ -455,6 +455,66 @@ std::shared_ptr<Mesh> createSphere(float radius, uint32_t rings,
   return mesh;
 }
 
+std::shared_ptr<Mesh> createCapsule(float halfHeight, float radius,
+                                    uint32_t rings, uint32_t sectors) {
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+
+  // createSphere's rings, with the equator ring emitted twice: once at the
+  // top of the cylinder, once at its bottom.
+  const uint32_t columns = sectors + 1;
+  const uint32_t equator = rings / 2;
+  uint32_t rows = 0;
+  const auto ring = [&](uint32_t r, float offset) {
+    const float v = static_cast<float>(r) / static_cast<float>(rings);
+    const float phi = v * glm::pi<float>();
+    for (uint32_t s = 0; s <= sectors; s++) {
+      const float u = static_cast<float>(s) / static_cast<float>(sectors);
+      const float theta = u * glm::two_pi<float>();
+      const glm::vec3 normal(std::sin(phi) * std::cos(theta), std::cos(phi),
+                             std::sin(phi) * std::sin(theta));
+      Vertex vertex{};
+      vertex.pos = normal * radius + glm::vec3(0.0f, offset, 0.0f);
+      vertex.normal = normal;
+      vertex.texCoord = {u, v};
+      vertex.color = {1.0f, 1.0f, 1.0f};
+      vertices.push_back(vertex);
+    }
+    rows++;
+  };
+  for (uint32_t r = 0; r <= rings; r++) {
+    if (r <= equator) {
+      ring(r, halfHeight);
+    }
+    if (r >= equator) {
+      ring(r, -halfHeight);
+    }
+  }
+
+  // Counter-clockwise seen from outside, like createCube. (createSphere's
+  // order is the other way round: inside out under back-face culling.)
+  for (uint32_t r = 0; r + 1 < rows; r++) {
+    for (uint32_t s = 0; s < sectors; s++) {
+      const uint32_t i0 = r * columns + s;
+      const uint32_t i1 = i0 + columns;
+      indices.push_back(i0);
+      indices.push_back(i0 + 1);
+      indices.push_back(i1);
+      indices.push_back(i0 + 1);
+      indices.push_back(i1 + 1);
+      indices.push_back(i1);
+    }
+  }
+
+  auto mesh = std::make_shared<Mesh>();
+  mesh->minY = -(halfHeight + radius);
+  mesh->maxY = halfHeight + radius;
+  mesh->vertices = vertices;
+  mesh->indices = indices;
+  mesh->upload(vertices, indices);
+  return mesh;
+}
+
 std::shared_ptr<Mesh> createCube(float halfExtent) {
   ZoneScoped;
   std::vector<Vertex> vertices;
@@ -505,6 +565,28 @@ std::shared_ptr<Mesh> createCube(float halfExtent) {
   mesh->upload(vertices, indices);
   return mesh;
 }
+std::shared_ptr<Mesh> createQuad(float size, float tiles) {
+  ZoneScoped;
+  const float h = size * 0.5f;
+  std::vector<Vertex> vertices(4);
+  const glm::vec3 pos[4] = {{-h, -h, 0}, {h, -h, 0}, {h, h, 0}, {-h, h, 0}};
+  const glm::vec2 uv[4] = {{0, tiles}, {tiles, tiles}, {tiles, 0}, {0, 0}};
+  for (int i = 0; i < 4; i++) {
+    vertices[i].pos = pos[i];
+    vertices[i].normal = {0, 0, 1};
+    vertices[i].texCoord = uv[i];
+    vertices[i].color = {1, 1, 1};
+  }
+  std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0}; // CCW from +Z
+  auto mesh = std::make_shared<Mesh>();
+  mesh->minY = -h;
+  mesh->maxY = h;
+  mesh->vertices = vertices;
+  mesh->indices = indices;
+  mesh->upload(vertices, indices);
+  return mesh;
+}
+
 std::shared_ptr<Mesh> createCone(float radius, float height,
                                  uint32_t sectors) {
   ZoneScoped;

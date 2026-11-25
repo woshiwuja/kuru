@@ -1,7 +1,7 @@
 #pragma once
 #include "imgui.h"
 #include <Kuru.h>
-#include "../render/render.hpp"
+#include "plugin/default_plugins/render/render.hpp"
 #include "../hair/hair.hpp"
 #include <algorithm>
 #include <unordered_map>

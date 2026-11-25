@@ -17,8 +17,9 @@ namespace {
 // whatever UVs the mesh has.
 constexpr unsigned char FUCHSIA_PIXEL[4] = {255, 0, 255, 255};
 
-// A .png decoded by stb into an in-memory sRGB KTX2, so it takes load()'s KTX path.
-KTX_error_code createKtx2FromPng(const std::string &file, ktxTexture **out) {
+// A .png/.jpg/... decoded by stb into an in-memory sRGB KTX2, so it takes
+// load()'s KTX path.
+KTX_error_code createKtx2FromImage(const std::string &file, ktxTexture **out) {
   ZoneScoped;
   int width = 0, height = 0, channels = 0;
   stbi_uc *pixels =
@@ -186,9 +187,11 @@ void Texture::load(const std::string &path)
 	auto core = Core::get();
 	ktxTexture    *kTexture = nullptr;
 	KTX_error_code result;
-	if (std::filesystem::path(path).extension() == ".png")
+	// Only KTX goes to libktx; anything else is left to stb.
+	const auto ext = std::filesystem::path(path).extension();
+	if (ext != ".ktx2" && ext != ".ktx")
 	{
-		result = createKtx2FromPng(assetPath(path), &kTexture);
+		result = createKtx2FromImage(assetPath(path), &kTexture);
 	}
 	else
 	{

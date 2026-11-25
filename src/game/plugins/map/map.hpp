@@ -1,8 +1,8 @@
 #pragma once
 #include <Kuru.h>
-#include "../render/render.hpp"
-#include "../render/mesh_registry.hpp"
-#include "../model/model.hpp"
+#include "plugin/default_plugins/render/render.hpp"
+#include "plugin/default_plugins/render/mesh_registry.hpp"
+#include "plugin/default_plugins/model/model.hpp"
 #include "../navigation/navigation.hpp"
 #include "Jolt/Physics/Body/BodyID.h"
 #include "entt/entity/fwd.hpp"
@@ -13,7 +13,7 @@
 #include <cmath>
 #include <limits>
 #include <vector>
-#include "../transform/transform.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
 #include "imgui.h"
 
 using namespace KR;

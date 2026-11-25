@@ -9,7 +9,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <iostream>
-#include "../physics/physics.hpp" // glmVecToJPH
+#include "plugin/default_plugins/physics/physics.hpp" // glmVecToJPH
 #include <tracy/Tracy.hpp>
 
 using namespace KR;

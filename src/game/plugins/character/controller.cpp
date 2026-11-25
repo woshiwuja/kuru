@@ -3,8 +3,8 @@
 #include "../map/map.hpp"
 #include "../navigation/navigation.hpp"
 #include "../picking/picking.hpp"
-#include "../render/render.hpp"
-#include "../transform/transform.hpp"
+#include "plugin/default_plugins/render/render.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
 #ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL // glm/gtx/quaternion.hpp
 #endif

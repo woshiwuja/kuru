@@ -2,7 +2,7 @@
 #include "character.hpp"
 #include "Jolt/Physics/Body/BodyID.h"
 #include "entt/entity/fwd.hpp"
-#include "../render/render.hpp"
+#include "plugin/default_plugins/render/render.hpp"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyInterface.h>
 #include <vector>

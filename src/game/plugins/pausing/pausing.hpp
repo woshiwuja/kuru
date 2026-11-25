@@ -41,7 +41,6 @@ struct PausingPlugin : public Plugin {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 12.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 16.0f));
     ImGui::Begin("ESC", &open, flags);
-    // Width in font units, so it follows the font size above.
     const ImVec2 size(ImGui::GetFontSize() * 10.0f, 0.0f);
     if (ImGui::Button("Load", size)) {
       saveMode = SaveMenu::Load;

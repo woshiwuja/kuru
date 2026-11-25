@@ -11,7 +11,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
-#include "../render/mesh_registry.hpp"
+#include "plugin/default_plugins/render/mesh_registry.hpp"
 
 using namespace KR;
 
@@ -30,7 +30,7 @@ struct NavConfig {
   float agentHeight = 2.0f;
   float agentRadius = 0.5f;
   float agentMaxClimb = .9f;
-  float agentMaxSlope = 50.0f;   // gradi
+  float agentMaxSlope = 50.0f;
   float regionMinSize = 10.0f;
   float regionMergeSize = 20.0f;
   float edgeMaxLen = 12.0f;
@@ -194,8 +194,7 @@ struct NavigationPlugin : public BackgroundPlugin<NavBuildResult> {
   void spawnDebug(entt::registry &reg, NavMeshRef &ref);
   void spawnDebug(entt::registry &reg, NavMeshRef &ref, const DebugGeom &geom);
   void clearDebug(entt::registry &reg, NavMeshRef &ref);
-  // The NavMeshRef `agent` belongs to, pinning the first built one if it has
-  // none; null while that one isn't built.
   NavMeshRef *navFor(entt::registry &reg, NavAgent &agent);
+  void goToDestination(entt::registry &reg);
   void UI(entt::registry &reg);
 };

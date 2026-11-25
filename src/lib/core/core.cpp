@@ -6,7 +6,10 @@
 #include <SDL3/SDL_vulkan.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+#include <atomic>
 #include <cassert>
+#include <csignal>
+#include <thread>
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -101,6 +104,12 @@ Core *Core::get() {
 void Core::init() {
   ZoneScoped;
   settings->load(assetPath("settings.json"));
+  if (headless) {
+    initPhysics();
+    initECS();
+    running = true;
+    return;
+  }
   std::cerr << "[debug] Core::init: initVulkan\n" << std::flush;
   initVulkan();
   std::cerr << "[debug] Core::init: initGui\n" << std::flush;
@@ -115,6 +124,13 @@ void Core::init() {
 }
 
 void Core::end() {
+  if (headless) {
+    reg = entt::registry{};
+    plugins.clear();
+    physicsManager->stop();
+    physicsManager = nullptr;
+    return;
+  }
   cleanup();
   window->quit();
 }
@@ -174,6 +190,11 @@ void Core::initVulkan() {
 
 void Core::addPlugin(std::unique_ptr<Plugin> plugin) {
   plugins.emplace_back(std::move(plugin));
+}
+void Core::addPlugins(std::vector<std::unique_ptr<Plugin>> newPlugins) {
+  for (auto &p : newPlugins) {
+    addPlugin(std::move(p));
+  }
 }
 void Core::initPhysics() { physicsManager->init(); };
 
@@ -244,6 +265,15 @@ void Core::initAudio(){
 }
 void Core::run() {
   ZoneScoped;
+  if (headless) {
+    // Ctrl+C ends the loop cleanly instead of killing the process mid-tick.
+    static std::atomic<bool> interrupted = false;
+    std::signal(SIGINT, [](int) { interrupted = true; });
+    while (running && !interrupted) {
+      headlessFrame();
+    }
+    return;
+  }
   while (running) {
     eventManager->pump();
     running = !eventManager->quit;
@@ -437,6 +467,28 @@ void Core::recordCommandBuffer(uint32_t imageIndex) {
       vk::PipelineStageFlagBits2::eBottomOfPipe,          // dstStage
       vk::ImageAspectFlagBits::eColor);
   commandBuffer.end();
+}
+
+void Core::headlessFrame() {
+  ZoneScoped;
+  using clock = std::chrono::steady_clock;
+  static auto lastFrameTime = clock::now();
+  const auto frameStart = clock::now();
+  dt = std::chrono::duration<float>(frameStart - lastFrameTime).count();
+  lastFrameTime = frameStart;
+  for (auto &plugin : plugins) {
+    plugin->start(reg);
+  }
+  for (auto &plugin : plugins) {
+    plugin->update(reg);
+  }
+  for (auto &plugin : plugins) {
+    plugin->end(reg);
+  }
+  std::this_thread::sleep_until(
+      frameStart + std::chrono::duration_cast<clock::duration>(
+                       std::chrono::duration<float>(1.0f / headlessTickRate)));
+  FrameMark;
 }
 
 void Core::drawFrame() {

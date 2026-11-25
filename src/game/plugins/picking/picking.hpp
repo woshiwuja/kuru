@@ -1,6 +1,6 @@
 #pragma once
-#include "../render/render.hpp"
-#include "../transform/transform.hpp"
+#include "plugin/default_plugins/render/render.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
 #include "physics/raycast.hpp"
 #include <Kuru.h>
 #include <limits>
@@ -28,8 +28,6 @@ inline float rayBox(glm::vec3 origin, glm::vec3 dir, glm::vec3 lo,
   return tNear;
 }
 
-// Ray vs triangle (Moller-Trumbore). The ray is origin + t * dir; returns the
-// hit t, or a negative value on a miss. Both faces count.
 inline float rayTriangle(glm::vec3 origin, glm::vec3 dir, glm::vec3 a,
                          glm::vec3 b, glm::vec3 c) {
   const glm::vec3 e1 = b - a, e2 = c - a;
@@ -52,7 +50,6 @@ inline float rayTriangle(glm::vec3 origin, glm::vec3 dir, glm::vec3 a,
   return glm::dot(e2, q) * inv;
 }
 
-// The nearest Pickable whose model box the ray through `pixel` hits, or null.
 inline entt::entity pickAt(entt::registry &r, const FrameContext &frame,
                            glm::vec2 pixel) {
   const glm::vec3 origin = glm::inverse(frame.view)[3];

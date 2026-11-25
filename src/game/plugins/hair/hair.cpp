@@ -1,5 +1,5 @@
 #include "hair.hpp"
-#include "../transform/transform.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
 #include "imgui.h"
 #include <Jolt/Compute/CPU/ComputeSystemCPU.h>
 #include <Jolt/Geometry/IndexedTriangle.h>
@@ -16,13 +16,8 @@
 
 namespace {
 
-// One joint, never moving: the scalp is a static mesh in the model's space,
-// and the whole groom moves with Hair::SetPosition/SetRotation instead.
 const JPH::Mat44 identityJoint = JPH::Mat44::sIdentity();
 
-// The strands of a .hair file (https://www.cemyuksel.com/research/hairmodels/),
-// in metres, Y up. At most `maxStrands`, taken evenly across the file. Parser
-// from Jolt's Samples/Tests/Hair/HairTest.cpp, with bounds checks added.
 std::vector<std::vector<glm::vec3>> readHairFile(const std::string &path,
                                                  uint32_t maxStrands) {
   ZoneScoped;
@@ -382,8 +377,7 @@ JPH::Ref<JPH::HairSettings> HairPlugin::groomSettings(const std::string &path,
   settings->mSimulationBoundsPadding = JPH::Vec3::sReplicate(0.1f);
   // In the groom's space. Characters only ever turn about Y, which leaves
   // gravity as it is, so one groom fits every character sharing it.
-  settings->mInitialGravity =
-      Core::get()->physicsManager->system.GetGravity();
+  settings->mInitialGravity = Core::get()->physicsManager->system.GetGravity();
   settings->InitRenderAndSimulationStrands(vertices, simStrands);
   float maxDistSq = 0.0f;
   settings->Init(maxDistSq);
@@ -458,7 +452,8 @@ entt::entity HairPlugin::grow(entt::registry &reg, entt::entity scalp,
   }
   instance.readback->Unmap();
   for (uint32_t f = 0; f < MAX_FRAMES_IN_FLIGHT; f++) {
-    instance.lines[f] = lineMesh(instance.vertices, indices, instance.mapped[f]);
+    instance.lines[f] =
+        lineMesh(instance.vertices, indices, instance.mapped[f]);
   }
 
   const entt::entity e = reg.create();
@@ -552,8 +547,7 @@ void HairPlugin::update(entt::registry &reg) {
     // The nearest 3 step every frame, the next 3 every 2nd, the rest every
     // 3rd, staggered by entity so a band's steps spread over the frames.
     const uint32_t interval = std::min<uint32_t>(1 + uint32_t(rank) / 3, 3);
-    if (dt <= 0.0f ||
-        (frameCount + entt::to_integral(e)) % interval != 0) {
+    if (dt <= 0.0f || (frameCount + entt::to_integral(e)) % interval != 0) {
       continue;
     }
     // Iterations per step as if it ran every frame: that's the saving.
@@ -614,7 +608,8 @@ bool hairFileCombo(const char *label, const std::string &current,
       if (entry.path().extension() != ".hair") {
         continue;
       }
-      const std::string path = "models/hair/" + entry.path().filename().string();
+      const std::string path =
+          "models/hair/" + entry.path().filename().string();
       if (Selectable(path.c_str(), path == current) && path != current) {
         chosen = path;
         picked = true;
@@ -688,7 +683,8 @@ void HairPlugin::UI(entt::registry &reg) {
   SliderFloat("linear damping", &material.mLinearDamping, 0.0f, 5.0f);
   SliderFloat("angular damping", &material.mAngularDamping, 0.0f, 5.0f);
   SliderFloat("friction", &material.mFriction, 0.0f, 1.0f);
-  SliderFloat("max linear velocity", &material.mMaxLinearVelocity, 0.01f, 10.0f);
+  SliderFloat("max linear velocity", &material.mMaxLinearVelocity, 0.01f,
+              10.0f);
   SliderFloat("max angular velocity", &material.mMaxAngularVelocity, 0.01f,
               50.0f);
   SliderFloat("grid density force", &material.mGridDensityForceFactor, 0.0f,

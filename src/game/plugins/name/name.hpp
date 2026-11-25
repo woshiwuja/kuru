@@ -2,8 +2,8 @@
 #include "imgui.h"
 #include "entt/entt.hpp"
 #include "plugin/plugin.hpp"
-#include "../transform/transform.hpp"
-#include "../ui/ui.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
+#include "plugin/default_plugins/ui/ui.hpp"
 #include "physics/raycast.hpp"
 struct Name {
   std::string fname = "fname";

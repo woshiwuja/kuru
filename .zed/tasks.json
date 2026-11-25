@@ -2,7 +2,7 @@
 [
   {
     "label": "build",
-    "command": "cmake -S . -B build; if ($?) { cmake --build build }",
+    "command": "cmake -S . -B build && cmake --build build",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -10,7 +10,7 @@
   },
   {
     "label": "build release",
-    "command": "cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release; if ($?) { cmake --build build-release }",
+    "command": "cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-release",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -18,7 +18,7 @@
   },
   {
     "label": "build & run debug",
-    "command": "cmake -S . -B build; if ($?) { cmake --build build }; if ($?) { ./build/Kuru.exe }",
+    "command": "cmake -S . -B build && cmake --build build && ./build/Kuru",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -26,7 +26,17 @@
   },
   {
     "label": "build & run release",
-    "command": "cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release; if ($?) { cmake --build build-release }; if ($?) { ./build-release/Kuru.exe }",
+    "command": "cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-release && ./build-release/Kuru",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    // Linux, bash. The viewer connects as soon as the engine is up (-a) and
+    // outlives it (setsid), so the capture stays open to inspect.
+    "label": "build & run release + tracy",
+    "command": "cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release && cmake --build build-release && { setsid -f ./tracy-*-linux/tracy-profiler-*.AppImage -a 127.0.0.1; ./build-release/Kuru; }",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,

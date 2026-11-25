@@ -8,10 +8,10 @@
 #include <filesystem>
 #include "imgui.h"
 #include "physics/raycast.hpp"
-#include "../model/model.hpp"
-#include "../render/render.hpp"
-#include "../transform/transform.hpp"
-#include "../ui/ui.hpp"
+#include "plugin/default_plugins/model/model.hpp"
+#include "plugin/default_plugins/render/render.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
+#include "plugin/default_plugins/ui/ui.hpp"
 struct Item {
     std::string name = "Item";
     std::string description = "An item";

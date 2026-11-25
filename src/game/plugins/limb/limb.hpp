@@ -1,6 +1,6 @@
 #pragma once
 #include "../character/character.hpp"
-#include "../render/render.hpp"
+#include "plugin/default_plugins/render/render.hpp"
 #include "entt/entity/fwd.hpp"
 #include <Kuru.h>
 #include <cstring>

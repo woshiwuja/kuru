@@ -45,7 +45,17 @@ std::vector<ModelPart> loadModelParts(const std::string &path);
 std::shared_ptr<Mesh> createSphere(float radius = 0.5f, uint32_t rings = 16,
                                    uint32_t sectors = 32);
 
+// Along Y, centered on the origin: a sphere split at the equator with a
+// 2 * halfHeight cylinder in between, like JPH::CapsuleShape.
+std::shared_ptr<Mesh> createCapsule(float halfHeight = 0.5f,
+                                    float radius = 0.5f, uint32_t rings = 16,
+                                    uint32_t sectors = 32);
+
 std::shared_ptr<Mesh> createCube(float halfExtent = 0.5f);
+
+// A size x size quad in XY facing +Z, uv tiled `tiles` times (the sampler
+// repeats).
+std::shared_ptr<Mesh> createQuad(float size = 1.0f, float tiles = 1.0f);
 
 // Tip at the origin, base circle at y = height: an inverted cone that points
 // down -Y. Flat-shaded.

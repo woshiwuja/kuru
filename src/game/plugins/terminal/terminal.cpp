@@ -122,7 +122,8 @@ bool ptySpawn(TerminalSession &s) {
 }
 
 // Best effort: retries EINTR, drops the rest on EAGAIN like most terminals.
-void ptyWrite(int fd, const char *buf, size_t len) {
+void ptyWrite(int fd, const void *data, size_t len) {
+    const char *buf = (const char *)data;
     ZoneScoped;
     while (len > 0) {
         ssize_t n = write(fd, buf, len);
@@ -165,7 +166,7 @@ bool ptyRead(TerminalSession &s) {
 // ---------------------------------------------------------------------------
 
 void effectWritePty(GhosttyTerminal, void *userdata, const uint8_t *data, size_t len) {
-    ptyWrite(static_cast<TerminalSession *>(userdata)->ptyFd, (const char *)data, len);
+    ptyWrite(static_cast<TerminalSession *>(userdata)->ptyFd, data, len);
 }
 
 bool effectSize(GhosttyTerminal, void *userdata, GhosttySizeReportSize *out) {
@@ -326,7 +327,7 @@ GhosttyMods currentMods() {
 // escape-sequence tables here.
 void handleKeys(TerminalSession &s) {
     ZoneScoped;
-    ghostty_key_encoder_setopt_from_terminal(s.keyEncoder, s.terminal);
+    ghostty_key_encoder_set_from_terminal(s.keyEncoder, s.terminal);
 
     // This frame's typed text, taken so no other widget sees it too
     ImGuiIO &io = ImGui::GetIO();
@@ -368,12 +369,12 @@ void handleKeys(TerminalSession &s) {
         ghostty_key_event_set_consumed_mods(s.keyEvent, consumed);
         // The text rides on the first key event of the frame; releases carry none
         if (!text.empty() && !released) {
-            ghostty_key_event_set_utf8(s.keyEvent, text.data(), text.size());
+            ghostty_key_event_set_utf8(s.keyEvent, GhosttyString{(const uint8_t *)text.data(), text.size()});
         } else {
-            ghostty_key_event_set_utf8(s.keyEvent, nullptr, 0);
+            ghostty_key_event_set_utf8(s.keyEvent, GhosttyString{});
         }
 
-        char buf[128];
+        uint8_t buf[128];
         size_t written = 0;
         if (ghostty_key_encoder_encode(s.keyEncoder, s.keyEvent, buf, sizeof(buf), &written) == GHOSTTY_SUCCESS
             && written > 0) {
@@ -389,7 +390,7 @@ void handleKeys(TerminalSession &s) {
 
 void mouseWrite(TerminalSession &s) {
     ZoneScoped;
-    char buf[128];
+    uint8_t buf[128];
     size_t written = 0;
     if (ghostty_mouse_encoder_encode(s.mouseEncoder, s.mouseEvent, buf, sizeof(buf), &written) == GHOSTTY_SUCCESS
         && written > 0) {
@@ -401,7 +402,7 @@ void mouseWrite(TerminalSession &s) {
 // the program enabled); the wheel scrolls the scrollback when nothing tracks.
 void handleMouse(TerminalSession &s, ImVec2 origin, ImVec2 size, bool hovered) {
     ZoneScoped;
-    ghostty_mouse_encoder_setopt_from_terminal(s.mouseEncoder, s.terminal);
+    ghostty_mouse_encoder_set_from_terminal(s.mouseEncoder, s.terminal);
     GhosttyMouseEncoderSize encSize = GHOSTTY_INIT_SIZED(GhosttyMouseEncoderSize);
     encSize.screen_width = (uint32_t)size.x;
     encSize.screen_height = (uint32_t)size.y;
@@ -411,7 +412,7 @@ void handleMouse(TerminalSession &s, ImVec2 origin, ImVec2 size, bool hovered) {
     encSize.padding_bottom = (uint32_t)pad;
     encSize.padding_left = (uint32_t)pad;
     encSize.padding_right = (uint32_t)pad;
-    ghostty_mouse_encoder_setopt(s.mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &encSize);
+    ghostty_mouse_encoder_set(s.mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &encSize);
 
     const GhosttyMouseButton buttons[] = {
         GHOSTTY_MOUSE_BUTTON_LEFT, GHOSTTY_MOUSE_BUTTON_RIGHT, GHOSTTY_MOUSE_BUTTON_MIDDLE}; // ImGuiMouseButton order
@@ -419,9 +420,9 @@ void handleMouse(TerminalSession &s, ImVec2 origin, ImVec2 size, bool hovered) {
     for (int b = 0; b < 3; b++) {
         anyPressed = anyPressed || ImGui::IsMouseDown(b);
     }
-    ghostty_mouse_encoder_setopt(s.mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED, &anyPressed);
+    ghostty_mouse_encoder_set(s.mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED, &anyPressed);
     bool trackCell = true; // drop motion that stays inside one cell
-    ghostty_mouse_encoder_setopt(s.mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, &trackCell);
+    ghostty_mouse_encoder_set(s.mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, &trackCell);
 
     const ImGuiIO &io = ImGui::GetIO();
     GhosttyMousePosition pos{};
@@ -468,7 +469,7 @@ void handleMouse(TerminalSession &s, ImVec2 origin, ImVec2 size, bool hovered) {
             mouseWrite(s);
         } else {
             GhosttyTerminalScrollViewport sv{};
-            sv.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA;
+            sv.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_DELTA;
             sv.value.delta = 3; // rows per tick, negative is up into history
             if (io.MouseWheel > 0.0f) {
                 sv.value.delta = -3;
@@ -501,7 +502,7 @@ bool handleScrollbar(TerminalSession &s, ImVec2 origin, ImVec2 size, bool hovere
         intptr_t delta = (intptr_t)(target - (int64_t)bar.offset);
         if (delta != 0) {
             GhosttyTerminalScrollViewport sv{};
-            sv.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA;
+            sv.tag = GHOSTTY_TERMINAL_SCROLL_VIEWPORT_DELTA;
             sv.value.delta = delta;
             ghostty_terminal_scroll_viewport(s.terminal, sv);
         }
@@ -530,7 +531,7 @@ void handleFocus(TerminalSession &s, bool focused) {
     if (focused) {
         event = GHOSTTY_FOCUS_GAINED;
     }
-    char buf[8];
+    uint8_t buf[8];
     size_t written = 0;
     if (ghostty_focus_encode(event, buf, sizeof(buf), &written) == GHOSTTY_SUCCESS && written > 0) {
         ptyWrite(s.ptyFd, buf, written);
@@ -566,7 +567,7 @@ ImU32 rgb(GhosttyColorRgb c, int alpha = 255) {
 void render(TerminalSession &s, ImDrawList *dl, ImFont *font, ImVec2 origin, ImVec2 size) {
     ZoneScoped;
     GhosttyRenderStateColors colors = GHOSTTY_INIT_SIZED(GhosttyRenderStateColors);
-    if (ghostty_render_state_colors_get(s.renderState, &colors) != GHOSTTY_SUCCESS) {
+    if (ghostty_render_state_get(s.renderState, GHOSTTY_RENDER_STATE_DATA_COLORS, &colors) != GHOSTTY_SUCCESS) {
         return;
     }
     dl->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y), rgb(colors.background));
@@ -599,7 +600,8 @@ void render(TerminalSession &s, ImDrawList *dl, ImFont *font, ImVec2 origin, ImV
 
             // GRAPHEMES_BUF writes every codepoint, so size for all of them
             std::vector<uint32_t> codepoints(graphemeLen);
-            ghostty_render_state_row_cells_get(s.rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, codepoints.data());
+            GhosttyCodepointBuffer graphemes{codepoints.data(), codepoints.size(), 0};
+            ghostty_render_state_row_cells_get(s.rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, &graphemes);
             std::string text;
             for (uint32_t cp : codepoints) {
                 char u8[5];
@@ -608,9 +610,9 @@ void render(TerminalSession &s, ImDrawList *dl, ImFont *font, ImVec2 origin, ImV
 
             GhosttyColorRgb fg = colors.foreground;
             ghostty_render_state_row_cells_get(s.rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR, &fg);
-            GhosttyStyle style = GHOSTTY_INIT_SIZED(GhosttyStyle);
+            GhosttyStyle style{};
             ghostty_render_state_row_cells_get(s.rowCells, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_STYLE, &style);
-            if (style.inverse) {
+            if (style.flags & GHOSTTY_STYLE_FLAG_INVERSE) {
                 std::swap(fg, bg);
                 hasBg = true;
             }
@@ -618,16 +620,16 @@ void render(TerminalSession &s, ImDrawList *dl, ImFont *font, ImVec2 origin, ImV
                 dl->AddRectFilled(cellMin, cellMax, rgb(bg));
             }
             float italic = 0.0f;
-            if (style.italic) {
+            if (style.flags & GHOSTTY_STYLE_FLAG_ITALIC) {
                 italic = fontSize / 6.0f;
             }
             dl->AddText(font, fontSize, ImVec2(cellMin.x + italic, cellMin.y), rgb(fg), text.c_str());
-            if (style.bold) {
+            if (style.flags & GHOSTTY_STYLE_FLAG_BOLD) {
                 dl->AddText(font, fontSize, ImVec2(cellMin.x + italic + 1.0f, cellMin.y), rgb(fg), text.c_str());
             }
         }
         bool clean = false;
-        ghostty_render_state_row_set(s.rowIter, GHOSTTY_RENDER_STATE_ROW_OPTION_DIRTY, &clean);
+        ghostty_render_state_row_set(s.rowIter, GHOSTTY_RENDER_STATE_ROW_OPT_DIRTY, &clean);
         y += s.cellHeight;
     }
 
@@ -675,7 +677,7 @@ void render(TerminalSession &s, ImDrawList *dl, ImFont *font, ImVec2 origin, ImV
     }
 
     GhosttyRenderStateDirty cleanState = GHOSTTY_RENDER_STATE_DIRTY_FALSE;
-    ghostty_render_state_set(s.renderState, GHOSTTY_RENDER_STATE_OPTION_DIRTY, &cleanState);
+    ghostty_render_state_set(s.renderState, GHOSTTY_RENDER_STATE_OPT_DIRTY, &cleanState);
 }
 
 // Drain the shell's output, then reap it once the pty closes (EOF can come

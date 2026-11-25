@@ -27,6 +27,10 @@ struct AppInfo {
 // the pipeline and per-entity state in the render plugin.
 struct Core {
   bool running = false;
+  // No window, Vulkan, ImGui or audio: run() just ticks the plugins'
+  // start/update/end at headlessTickRate (dedicated servers). Set before init().
+  bool headless = false;
+  float headlessTickRate = 60.0f;
   std::unique_ptr<Window> window = nullptr;
   std::unique_ptr<EventManager> eventManager = nullptr;
   std::unique_ptr<PhysicsManager> physicsManager = nullptr;
@@ -67,6 +71,7 @@ struct Core {
   // Plugins must be registered before init(): that is when they build their
   // pipelines, and the device has to exist by then.
   void addPlugin(std::unique_ptr<Plugin> plugin);
+  void addPlugins(std::vector<std::unique_ptr<Plugin>> newPlugins);
 
   void initVulkan();
   void initECS();
@@ -79,6 +84,7 @@ struct Core {
   void createCommandBuffers();
   void recordCommandBuffer(uint32_t imageIndex);
   void drawFrame();
+  void headlessFrame();
   [[nodiscard]] std::vector<const char *> getRequiredInstanceExtensions() const;
   [[nodiscard]] bool checkValidationLayerSupport() const;
   void save(const char* path);

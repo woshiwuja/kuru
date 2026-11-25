@@ -1,5 +1,5 @@
 #pragma once
-#include "../render/render.hpp"
+#include "plugin/default_plugins/render/render.hpp"
 #include <Jolt/Jolt.h>
 #include <Jolt/Compute/ComputeSystem.h>
 #include <Jolt/Physics/Hair/Hair.h>

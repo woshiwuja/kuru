@@ -1,5 +1,5 @@
 #include "outline.hpp"
-#include "../render/render.hpp"
+#include "plugin/default_plugins/render/render.hpp"
 #include "imgui.h"
 #include <tracy/Tracy.hpp>
 
@@ -14,8 +14,6 @@ void OutlinePlugin::init(entt::registry &reg) {
   createOutlineDescriptorSet();
 }
 
-// Disabled: the G-buffer is only read by drawOutline, so skip filling it. A
-// re-enable takes effect next frame, after this has run again.
 void OutlinePlugin::start(entt::registry &reg) {
   if (enabled) {
     drawNormalPrepass(reg);

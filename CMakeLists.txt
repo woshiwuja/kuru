@@ -177,18 +177,18 @@ FetchContent_Declare(protobuf
   GIT_SHALLOW TRUE
   GIT_SUBMODULES "")
 # libghostty-vt (terminal emulation for the terminal plugin). Its CMakeLists just
-# runs `zig build -Demit-lib-vt`, and ghostty insists on zig 0.16.x exactly, so
+# runs `zig build -Demit-lib-vt`, and ghostty insists on zig 0.17.x exactly, so
 # fetch that zig instead of trusting whatever is on PATH.
-# ponytail: x86_64 Linux zig only; Windows needs the zig-x86_64-windows-0.16.0.zip
+# ponytail: x86_64 Linux zig only; Windows needs the zig-x86_64-windows-0.17.1.zip
 FetchContent_Declare(zig
-  URL https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
-  URL_HASH SHA256=70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+  URL https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz
+  URL_HASH SHA256=3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a
   SOURCE_SUBDIR no-configure)
 FetchContent_MakeAvailable(zig)
 set(ZIG_EXECUTABLE ${zig_SOURCE_DIR}/zig CACHE FILEPATH "" FORCE)
 FetchContent_Declare(ghostty
   GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
-  GIT_TAG f64f4aca2c29b554d111b36c3d946a9bddd159ff) # ghostling's pin: terminal.cpp is a port of its main.c
+  GIT_TAG vt-1.0.0) # terminal.cpp started as a port of ghostling's main.c
 FetchContent_MakeAvailable(glm entt stb tinygltf ktx sdl3 sdl3_image imgui imguizmo jolt recastnavigation protobuf ghostty)
 # Tracy profiler client. Shared, same reasoning as SDL3/Jolt: both KuruLib and
 # Kuru record zones, and Tracy keeps one process-wide queue. On demand: no data
@@ -302,29 +302,43 @@ add_dependencies(Kuru dialogue)
 target_link_libraries(Kuru PRIVATE KuruLib YarnSpinner ghostty-vt-static util # util: forkpty
   RecastNavigation::Recast RecastNavigation::Detour
   RecastNavigation::DetourCrowd RecastNavigation::DetourTileCache RecastNavigation::DebugUtils)
+# Second game, built on the engine's default plugins only: a client and a
+# headless server. Plugins are header-only, so each is just its main.cpp.
+add_executable(Kuru2Client src/game2/client/main.cpp)
+add_executable(Kuru2Server src/game2/server/main.cpp)
+target_link_libraries(Kuru2Client PRIVATE KuruLib)
+target_link_libraries(Kuru2Server PRIVATE KuruLib)
+target_include_directories(Kuru2Client PRIVATE src/game2)
+target_include_directories(Kuru2Server PRIVATE src/game2)
 if(MSVC)
   # clang-cl/cl.exe default to exceptions off; Kuru's error paths (and tinygltf/nlohmann json) use throw/try.
   # PRIVATE: Jolt's own CMakeLists disables exceptions for itself and must not see this.
   target_compile_options(KuruLib PRIVATE /EHsc)
   target_compile_options(Kuru PRIVATE /EHsc)
+  target_compile_options(Kuru2Client PRIVATE /EHsc)
+  target_compile_options(Kuru2Server PRIVATE /EHsc)
 endif()
 
 # Jolt/SDL3/Tracy build as DLLs (see the FetchContent_Declare comments above):
 # put them next to Kuru.exe so the loader finds them. copy_if_different (not
 # file(COPY) at configure time) so a rebuilt SDL3.dll/Jolt.dll gets picked up.
-add_custom_command(TARGET Kuru POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE:Jolt::Jolt>
-          $<TARGET_FILE:Tracy::TracyClient> $<TARGET_FILE_DIR:Kuru>)
+foreach(_game Kuru Kuru2Client Kuru2Server)
+  add_custom_command(TARGET ${_game} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE:Jolt::Jolt>
+            $<TARGET_FILE:Tracy::TracyClient> $<TARGET_FILE_DIR:${_game}>)
+endforeach()
 
 # main.cpp opens textures/, models/, cursors/ and fonts/ cwd-relative too. Build
 # time, not configure time: file(COPY) ran once at cmake, so an asset added
 # afterwards stayed missing until someone re-configured - and the only symptom
 # was a failed load.
-foreach(_dir textures models cursors fonts)
-  add_custom_command(TARGET Kuru POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/assets/${_dir} $<TARGET_FILE_DIR:Kuru>/${_dir})
+foreach(_game Kuru Kuru2Client Kuru2Server)
+  foreach(_dir textures models cursors fonts)
+    add_custom_command(TARGET ${_game} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+              ${CMAKE_CURRENT_SOURCE_DIR}/assets/${_dir} $<TARGET_FILE_DIR:${_game}>/${_dir})
+  endforeach()
 endforeach()
 
 # HairPlugin loads Jolt's compute shaders from shaders/jolt/: the .spv files its
@@ -335,7 +349,7 @@ add_custom_command(TARGET Kuru POST_BUILD
 
 # render.cpp opens shaders/*.spv relative to the cwd, so emit them next to the binary.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/shaders) # slangc won't create it
-foreach(_shader slang sky_clouds outline)
+foreach(_shader slang sky_clouds outline parallax)
   add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/${_shader}.spv
     COMMAND $ENV{VULKAN_SDK}/bin/slangc${CMAKE_EXECUTABLE_SUFFIX}
@@ -343,11 +357,13 @@ foreach(_shader slang sky_clouds outline)
             -target spirv -emit-spirv-directly -fvk-use-entrypoint-name
             -o ${CMAKE_CURRENT_BINARY_DIR}/shaders/${_shader}.spv
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/${_shader}.slang
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets/shaders/slang.slang
     VERBATIM)
   list(APPEND _spv ${CMAKE_CURRENT_BINARY_DIR}/shaders/${_shader}.spv)
 endforeach()
 add_custom_target(shaders DEPENDS ${_spv})
 add_dependencies(Kuru shaders)
+add_dependencies(Kuru2Client shaders)
 
 # editor tooling (clangd, zed) looks for compile_commands.json at the repo root
 add_custom_target(compile_commands ALL

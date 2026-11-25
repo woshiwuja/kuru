@@ -9,6 +9,8 @@
 #include <glm/glm.hpp>
 #include <thread>
 #include <tracy/Tracy.hpp>
+#include <memory>
+#include <vector>
 #include <vulkan/vulkan_raii.hpp>
 #include <type_traits>
 #include "../common/common.hpp" // SaveFile
@@ -48,9 +50,9 @@ template <typename T> void metaRemove(entt::registry &r, entt::entity e) {
 template <typename T> void registerComponent() {
   using namespace entt::literals;
   if constexpr (std::is_trivially_copyable_v<T>) {
-    static bool once =
-        (serialTypes().push_back(
-            {entt::type_hash<T>::value(), &metaSave<T>, &metaLoad<T>}), true);
+    static bool once = (serialTypes().push_back({entt::type_hash<T>::value(),
+                                                 &metaSave<T>, &metaLoad<T>}),
+                        true);
     (void)once;
   }
   entt::meta_factory<T>{}
@@ -64,17 +66,10 @@ inline std::string typeName(const entt::meta_type &t) {
 
 // A plugin is a set of components and systems. Concrete plugins live in
 // src/game/plugins; this is only the interface Core runs them through.
-//
-// Core runs the three frame hooks as three passes over every plugin, not one
-// pass calling all three: that is what lets a plugin open something in start()
-// that the others use in update() and close it in end(). Within a pass the
-// order is registration order.
 struct Plugin {
   virtual ~Plugin() = default;
   Plugin() = default;
-  virtual void init(entt::registry &reg) {
-      ZoneScoped;
-  }
+  virtual void init(entt::registry &reg) { ZoneScoped; }
   virtual void start(entt::registry &reg) {}
   virtual void update(entt::registry &reg) {}
   virtual void end(entt::registry &reg) {}
@@ -82,49 +77,50 @@ struct Plugin {
   virtual void load(entt::registry &reg, SaveFile &file) {}
 };
 
-template<typename Result> struct BackgroundJob {
-    std::future<Result> result;
-    bool busy() const {return result.valid();}
-    template<typename Function> void launch(Function fn){
-        result = std::async(std::launch::async, std::move(fn));
+template <typename Result> struct BackgroundJob {
+  std::future<Result> result;
+  bool busy() const { return result.valid(); }
+  template <typename Function> void launch(Function fn) {
+    result = std::async(std::launch::async, std::move(fn));
+  }
+  // The result once it's ready, nullopt before. Rethrows the worker's
+  // exception; either way the job is idle again afterwards.
+  std::optional<Result> poll() {
+    if (!result.valid() ||
+        result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+      return std::nullopt;
     }
-    // The result once it's ready, nullopt before. Rethrows the worker's
-    // exception; either way the job is idle again afterwards.
-    std::optional<Result> poll(){
-        if (!result.valid() || result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
-            return std::nullopt;
-        }
-        return result.get();
+    return result.get();
+  }
+  void wait() {
+    if (result.valid()) {
+      result.wait();
     }
-    void wait(){
-        if (result.valid()) {
-            result.wait();
-        }
-    }
+  }
 };
 
-// One job at a time on a worker thread. Polled in start(): that's the only
-// hook where a result may create or destroy renderables (see
-// NavigationPlugin), so an override of start() must call this one.
-template<typename Result> struct BackgroundPlugin : public Plugin{
-    BackgroundJob<Result> job;
-    virtual void launchNext(entt::registry &reg) {}
-    virtual void finished(entt::registry &reg, Result &result) {}
-    virtual void failed(entt::registry &reg, const std::exception &e) {
-        std::cout << e.what() << "\n";
+template <typename Result> struct BackgroundPlugin : public Plugin {
+  BackgroundJob<Result> job;
+  virtual void launchNext(entt::registry &reg) {}
+  virtual void finished(entt::registry &reg, Result &result) {}
+  virtual void failed(entt::registry &reg, const std::exception &e) {
+    std::cout << e.what() << "\n";
+  }
+  void start(entt::registry &reg) override {
+    try {
+      if (std::optional<Result> result = job.poll()) {
+        finished(reg, *result);
+      }
+    } catch (const std::exception &e) {
+      failed(reg, e);
     }
-    void start(entt::registry &reg) override {
-        try {
-            if (std::optional<Result> result = job.poll()) {
-                finished(reg, *result);
-            }
-        }
-        catch(const std::exception &e) {
-            failed(reg, e);
-        }
-        if (!job.busy()) {
-            launchNext(reg);
-        }
+    if (!job.busy()) {
+      launchNext(reg);
     }
+  }
 };
+
+template <typename Result> struct GraphicPlugin : public Plugin {};
+
+std::vector<std::unique_ptr<Plugin>> defaultPlugins();
 } // namespace KR

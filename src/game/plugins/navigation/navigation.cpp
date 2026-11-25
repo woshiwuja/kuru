@@ -4,8 +4,8 @@
 #include "core/core.hpp"
 #include "../map/map.hpp"
 #include "plugin/plugin.hpp"
-#include "../render/render.hpp"
-#include "../transform/transform.hpp"
+#include "plugin/default_plugins/render/render.hpp"
+#include "plugin/default_plugins/transform/transform.hpp"
 #include <DetourAlloc.h>
 #include <DetourNavMeshBuilder.h>
 #include <Recast.h>
@@ -14,12 +14,13 @@
 #include <cstring>
 #include <format>
 #include <fstream>
+#include <ghostty/vt/osc.h>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include "../material/material.hpp"
+#include "plugin/default_plugins/material/material.hpp"
 #include <tracy/Tracy.hpp>
 
 using namespace KR;
@@ -639,9 +640,10 @@ void NavigationPlugin::update(entt::registry &reg) {
       ref.nav.crowd->update(Core::get()->deltaTime(), nullptr);
     }
   }
+  goToDestination(reg);
 }
 
-void goToDestination(entt::registry &reg){
+void NavigationPlugin::goToDestination(entt::registry &reg) {
     for (auto [e, agent, dest] : reg.view<NavAgent, NavDest>().each()) {
       if (agent.idx < 0)
         continue;

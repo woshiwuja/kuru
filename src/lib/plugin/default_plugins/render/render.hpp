@@ -90,6 +90,9 @@ struct ModelNode {
 };
 
 struct DebugMesh {};
+// Drawn by another plugin with its own shader (ParallaxPlugin): the main pass
+// skips it, the shadow and outline passes still include it.
+struct CustomDraw {};
 struct DebugWire {};
 // With DebugMesh: the indices are a line list, drawn opaque and depth-tested
 // in flat vertex colour (params.x = 2).

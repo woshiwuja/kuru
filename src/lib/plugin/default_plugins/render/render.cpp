@@ -1178,7 +1178,7 @@ void RenderPlugin::drawMeshes(entt::registry &reg) {
   const Frustum camera(frame.proj * frame.view);
   mainDraws = 0;
   for (auto [entity, meshRef, renderable, t] :
-       reg.view<MeshRef, Renderable, Transform>(entt::exclude<DebugMesh>)
+       reg.view<MeshRef, Renderable, Transform>(entt::exclude<DebugMesh, CustomDraw>)
            .each()) {
     const auto [center, radius] = worldBounds(*meshRef.mesh, t.matrix(), t.scale);
     if (!camera.visible(center, radius))

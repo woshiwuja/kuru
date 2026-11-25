@@ -101,7 +101,6 @@ struct SettingsPlugin : public Plugin {
       v.window.mode = static_cast<WindowMode>(mode);
       changed = true;
     }
-    // On commit, not per keystroke: typing 1920 would resize to 1, 19, 192...
     ImGui::InputInt("Width", &v.window.width, 0);
     changed |= ImGui::IsItemDeactivatedAfterEdit();
     ImGui::InputInt("Height", &v.window.height, 0);
@@ -111,7 +110,6 @@ struct SettingsPlugin : public Plugin {
     quality("Textures", v.graphics.textures.quality);
     quality("Shadows", v.graphics.shadows.quality);
     if (ImGui::Checkbox("VSync", &v.graphics.vsync)) {
-      // The swapchain picks its present mode on creation: rebuild it.
       Core::get()->graphics->framebufferResized = true;
     }
     return changed;
