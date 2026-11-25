@@ -18,9 +18,7 @@ int main() {
     plugins.push_back(std::make_unique<CharacterPlugin>());
     plugins.push_back(std::make_unique<CameraPlugin>());
     plugins.push_back(std::make_unique<NetClientPlugin>(
-        PendingMesh{createCapsule(CharacterPlugin::halfHeight,
-                                  CharacterPlugin::radius),
-                    glm::vec4(0.8f, 0.2f, 0.2f, 1.0f)}));
+        glm::vec4(0.8f, 0.2f, 0.2f, 1.0f)));
     auto default_plugins = KR::defaultPlugins();
     for (auto &p : default_plugins) {
       plugins.push_back(std::move(p));

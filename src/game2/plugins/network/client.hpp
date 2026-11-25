@@ -1,5 +1,5 @@
 #pragma once
-#include "../character/character.hpp" // Player, PendingMesh
+#include "../character/character.hpp"
 #include "network.hpp"
 #include <memory>
 
@@ -23,7 +23,13 @@ struct NetClientPlugin : public KR::Plugin {
   PendingMesh look; // copied onto every new remote player
   std::unordered_map<uint32_t, entt::entity> remotes;
 
-  explicit NetClientPlugin(PendingMesh look) : look(std::move(look)) {}
+  explicit NetClientPlugin(glm::vec4 color) : look{nullptr, color} {}
+
+  // The mesh is a GPU upload: it needs Vulkan, up only once Core::init runs.
+  void init(entt::registry &) override {
+    look.mesh = createCapsule(CharacterPlugin::halfHeight,
+                              CharacterPlugin::radius);
+  }
 
   bool connected() const {
     return socket && myId != 0 &&
@@ -65,7 +71,8 @@ struct NetClientPlugin : public KR::Plugin {
       disconnect(reg);
       return;
     }
-    // ponytail: sends every frame; throttle to a fixed tick if bandwidth matters.
+    // ponytail: sends every frame; throttle to a fixed tick if bandwidth
+    // matters.
     for (auto [e, player, t] : reg.view<Player, Transform>().each()) {
       const NetPositionPacket packet{glm::vec3(t.position)};
       socket->send(server, &packet, sizeof packet);
@@ -142,7 +149,7 @@ struct NetClientPlugin : public KR::Plugin {
         reg.emplace<PendingMesh>(e, look);
       }
       reg.get<Transform>(e).position = {entry.position.x, entry.position.y,
-                                         entry.position.z};
+                                        entry.position.z};
       seen[entry.id] = e;
     }
     for (const auto &[id, e] : remotes) {
